@@ -1,5 +1,5 @@
 """
-API (FastAPI) do Patinhas & Carinho.
+API (FastAPI) do Pet Center.
 
 Recebe os dados do formulário (app.py) e grava os documentos no MongoDB.
 Cada coleção tem um endpoint POST (cadastrar) e um GET (listar, para conferir).
@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException
 from database import banco
 from modelos import Pet, Prestador, Tutor, Visita
 
-app = FastAPI(title="Patinhas & Carinho")
+app = FastAPI(title="Pet Center")
 
 
 def _para_object_id(valor):

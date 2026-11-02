@@ -1,5 +1,5 @@
 """
-Formulário web (Streamlit) do Patinhas & Carinho.
+Formulário web (Streamlit) do Pet Center.
 
 Permite cadastrar tutores, pets, prestadores e visitas, enviando os dados
 para a API (main.py). Escolha a entidade no menu lateral.
@@ -13,8 +13,8 @@ import streamlit as st
 
 API_URL = "http://localhost:8000"
 
-st.set_page_config(page_title="Patinhas & Carinho", page_icon="🐾")
-st.title("🐾 Patinhas & Carinho — Cadastro")
+st.set_page_config(page_title="Pet Center", page_icon="🐾")
+st.title("🐾 Pet Center — Cadastro")
 
 entidade = st.sidebar.selectbox(
     "O que você quer cadastrar?",
@@ -153,12 +153,63 @@ caminhos = {
     "Prestador": "/prestadores",
     "Visita": "/visitas",
 }
-with st.expander("Ver já cadastrados"):
+
+
+def resumir(entidade, registros):
+    """Monta uma tabela simples, só com os campos principais de cada categoria."""
+    linhas = []
+    for r in registros:
+        if entidade == "Tutor":
+            endereco = r.get("endereco", {})
+            linhas.append({
+                "Nome": r.get("nome", ""),
+                "E-mail": r.get("email", ""),
+                "Telefone": r.get("telefone", ""),
+                "Cidade": endereco.get("cidade", ""),
+            })
+        elif entidade == "Pet":
+            linhas.append({
+                "Nome": r.get("nome", ""),
+                "Espécie": r.get("especie", ""),
+                "Raça": r.get("raca", "-"),
+                "Porte": r.get("porte", "-"),
+            })
+        elif entidade == "Prestador":
+            linhas.append({
+                "Nome": r.get("nome", ""),
+                "Tipo": r.get("tipo", ""),
+                "Espécies aceitas": ", ".join(r.get("especies_aceitas", [])),
+                "Nº de serviços": len(r.get("servicos", [])),
+            })
+        else:  # Visita
+            avaliacao = r.get("avaliacao") or {}
+            linhas.append({
+                "Tipo": r.get("tipo", ""),
+                "Status": r.get("status", ""),
+                "Pet": r.get("pet_nome", ""),
+                "Prestador": r.get("prestador_nome", ""),
+                "Valor (R$)": r.get("valor", "-"),
+                "Nota": avaliacao.get("nota", "-"),
+            })
+    return linhas
+
+
+with st.expander("Ver já cadastrados", expanded=True):
     try:
         resposta = requests.get(f"{API_URL}{caminhos[entidade]}")
         if resposta.status_code == 200:
-            st.json(resposta.json())
+            registros = resposta.json()
+            if registros:
+                st.dataframe(
+                    resumir(entidade, registros),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                if st.checkbox("Ver dados completos (formato técnico)"):
+                    st.json(registros)
+            else:
+                st.info("Ainda não há nada cadastrado nesta categoria.")
         else:
             st.write("Não foi possível listar.")
     except requests.exceptions.ConnectionError:
-        st.info("API offline. Rode 'uvicorn main:app --reload' para ver a lista.")
+        st.info("API offline. Rode 'python -m uvicorn main:app' para ver a lista.")

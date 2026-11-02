@@ -1,4 +1,4 @@
-# 🐾 Patinhas & Carinho
+# 🐾 Pet Center
 
 **App de passeadores e hospedagem pet com banco de dados NoSQL (MongoDB)**
 
@@ -9,7 +9,7 @@ Autores: Henrique Souza e Yuri Cainã
 
 ## 🚀 Visão Geral
 
-O **Patinhas & Carinho** conecta **tutores** de animais domésticos a **prestadores de serviço**: passeadores e hospedagens pet.
+O **Pet Center** conecta **tutores** de animais domésticos a **prestadores de serviço**: passeadores e hospedagens pet.
 
 Hoje, quem precisa deixar o pet com alguém depende de indicações, mensagens soltas e pouca informação sobre como foi o serviço. O sistema centraliza esse processo: o tutor encontra prestadores perto de casa, contrata um passeio ou uma estadia e recebe um **relatório completo** de cada atendimento.
 

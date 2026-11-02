@@ -1,6 +1,6 @@
 """
 A1 - Criação do banco no MongoDB Atlas
-Patinhas & Carinho: app de passeadores e hospedagem pet
+Pet Center: app de passeadores e hospedagem pet
 
 Cria o banco "patinhas_carinho", as 4 coleções e insere documentos de exemplo.
 Todos os dados são fictícios.
