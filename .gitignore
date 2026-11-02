@@ -1,0 +1,10 @@
+# Segredos (senha do banco) - NUNCA versionar
+.env
+
+# Materiais de referência e instruções internas
+_referencia/
+CLAUDE.md
+
+# Python
+__pycache__/
+.venv/
