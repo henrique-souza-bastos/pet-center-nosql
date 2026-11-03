@@ -1,9 +1,11 @@
 """
-Modelos Pydantic (validação dos dados) das 4 entidades do sistema.
+Modelos Pydantic (validação dos dados) do Pet Center.
 
-A API (main.py) usa estes modelos para conferir os dados recebidos do
-formulário antes de gravar no MongoDB. Cada classe descreve os campos
-esperados e o seu tipo.
+Estrutura de documento ANINHADA, como pede o modelo orientado a documentos:
+- cada TUTOR guarda a lista dos seus PETS;
+- cada PET guarda a lista das suas VISITAS.
+Os PRESTADORES ficam numa coleção separada, porque são compartilhados por
+vários tutores e visitas (não faz sentido duplicá-los dentro de cada tutor).
 
 Autores: Henrique Souza e Yuri Cainã
 """
@@ -14,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 # ---------------------------------------------------------------------
-# TUTOR - o endereço fica embutido (é sempre lido junto com o tutor).
+# Pedaços reaproveitados
 # ---------------------------------------------------------------------
 class Endereco(BaseModel):
     bairro: str
@@ -22,68 +24,11 @@ class Endereco(BaseModel):
     uf: str
 
 
-class Tutor(BaseModel):
-    nome: str
-    email: str
-    telefone: str
-    endereco: Endereco
-
-
-# ---------------------------------------------------------------------
-# PET - "extra=allow" deixa cada espécie ter campos próprios (o gato tem
-# "indoor", o coelho tem "dieta"), sem precisar declarar todos aqui.
-# "tutor_id" é uma referência ao tutor dono do pet.
-# ---------------------------------------------------------------------
 class Medicamento(BaseModel):
     nome: str
     horarios: List[str] = []
 
 
-class Pet(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    tutor_id: str
-    nome: str
-    especie: str
-    raca: Optional[str] = None
-    porte: Optional[str] = None
-    peso_kg: Optional[float] = None
-    alergias: List[str] = []
-    medicamentos: List[Medicamento] = []
-    comportamento: Optional[dict] = None
-
-
-# ---------------------------------------------------------------------
-# PRESTADOR - passeadores e hospedagens. "localizacao" usa GeoJSON, sempre
-# na ordem [longitude, latitude]. "extra=allow" cobre campos como
-# "capacidade", que só a hospedagem tem.
-# ---------------------------------------------------------------------
-class Localizacao(BaseModel):
-    type: str = "Point"
-    coordinates: List[float]  # [longitude, latitude]
-
-
-class Servico(BaseModel):
-    nome: str
-    preco: float
-
-
-class Prestador(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    tipo: str  # "passeador" ou "hospedagem"
-    nome: str
-    localizacao: Localizacao
-    especies_aceitas: List[str]
-    servicos: List[Servico] = []
-
-
-# ---------------------------------------------------------------------
-# VISITA - o relatório de um passeio ou de uma estadia. O passeio tem
-# "trajeto"; a hospedagem tem "diario". Os nomes do pet e do prestador são
-# copiados de propósito, para exibir o relatório sem consultar outras
-# coleções.
-# ---------------------------------------------------------------------
 class Ocorrencia(BaseModel):
     tipo: str
     hora: str
@@ -108,21 +53,76 @@ class Avaliacao(BaseModel):
     comentario: Optional[str] = None
 
 
+# ---------------------------------------------------------------------
+# VISITA - fica DENTRO de um pet. Referencia o prestador (que é de outra
+# coleção) e guarda uma cópia do nome dele, para exibir sem consultar nada.
+# ---------------------------------------------------------------------
 class Visita(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    tipo: str  # "passeio" ou "hospedagem"
-    status: str  # agendada, em_andamento, concluida, cancelada
-    pet_id: str
-    pet_nome: str
-    prestador_id: str
-    prestador_nome: str
+    tipo: str            # "passeio" ou "hospedagem"
+    status: str          # agendada, em_andamento, concluida, cancelada
+    prestador_id: str    # referência ao prestador
+    prestador_nome: str  # cópia, para mostrar sem consultar outra coleção
     inicio: datetime
     fim: Optional[datetime] = None
-    trajeto: Optional[Trajeto] = None
-    diario: Optional[List[DiaHospedagem]] = None
+    trajeto: Optional[Trajeto] = None            # passeio
+    diario: Optional[List[DiaHospedagem]] = None  # hospedagem
     ocorrencias: List[Ocorrencia] = []
     fotos: List[str] = []
     observacoes: Optional[str] = None
     valor: Optional[float] = None
     avaliacao: Optional[Avaliacao] = None
+
+
+# ---------------------------------------------------------------------
+# PET - fica DENTRO de um tutor e carrega a lista das suas visitas.
+# "extra=allow" deixa cada espécie ter campos próprios (gato: indoor;
+# coelho: dieta).
+# ---------------------------------------------------------------------
+class Pet(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    nome: str
+    especie: str
+    raca: Optional[str] = None
+    porte: Optional[str] = None
+    peso_kg: Optional[float] = None
+    alergias: List[str] = []
+    medicamentos: List[Medicamento] = []
+    comportamento: Optional[dict] = None
+    visitas: List[Visita] = []
+
+
+# ---------------------------------------------------------------------
+# TUTOR - coleção principal. Guarda o endereço embutido e a lista de pets.
+# ---------------------------------------------------------------------
+class Tutor(BaseModel):
+    nome: str
+    email: str
+    telefone: str
+    endereco: Endereco
+    pets: List[Pet] = []
+
+
+# ---------------------------------------------------------------------
+# PRESTADOR - coleção separada (passeadores e hospedagens).
+# ---------------------------------------------------------------------
+class Localizacao(BaseModel):
+    type: str = "Point"
+    coordinates: List[float]  # [longitude, latitude]
+
+
+class Servico(BaseModel):
+    nome: str
+    preco: float
+
+
+class Prestador(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    tipo: str  # "passeador" ou "hospedagem"
+    nome: str
+    localizacao: Localizacao
+    especies_aceitas: List[str]
+    servicos: List[Servico] = []

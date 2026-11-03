@@ -21,7 +21,7 @@ Hoje, quem precisa deixar o pet com alguém depende de indicações, mensagens s
 Cães, gatos e pequenos animais, cada um com suas informações: alergias, medicamentos, dieta e comportamento.
 
 📍 **Busca de prestadores por proximidade**
-O tutor encontra passeadores e hospedagens a até X km de casa, filtrando pela espécie atendida.
+O tutor encontra passeadores e hospedagens perto de casa, filtrando pela espécie atendida.
 
 🦮 **Relatório de passeio**
 Trajeto de GPS, ocorrências (xixi, cocô), fotos e observações do passeador.
@@ -34,53 +34,59 @@ Nota e comentário do tutor ao final de cada atendimento.
 
 ---
 
-## 🧠 Por que um banco NoSQL (orientado a documentos)?
-
-1. **O relatório da visita é um agregado.** Trajeto, ocorrências, fotos e avaliação são sempre lidos juntos. No MongoDB, a visita inteira é um único documento, lido de uma vez. No modelo relacional, seriam várias tabelas e JOINs para remontar o relatório. (Conceito de *aggregate*, *NoSQL Distilled*, cap. 2.)
-2. **Esquema flexível.** Cada espécie tem campos diferentes: o gato tem `indoor`, o coelho tem `dieta` e não tem `raca`. Passeio tem `trajeto`; hospedagem tem `diario`. No modelo relacional, isso geraria colunas cheias de nulos ou tabelas extras.
-3. **Dados geográficos nativos.** O MongoDB armazena localizações no formato GeoJSON e oferece busca por proximidade.
-4. **Muitas escritas pequenas.** Durante o passeio, o app grava pontos de GPS com frequência.
-
-**Onde o relacional ainda seria melhor:** pagamentos, agenda sem conflito de horário e relatórios financeiros exigem consistência rígida e consultas tabulares. Em um sistema real, essas partes poderiam ficar em um banco relacional ao lado do MongoDB, o que caracteriza a **persistência poliglota** (*polyglot persistence*, *NoSQL Distilled*, cap. 13). Este projeto modela a parte em MongoDB.
-
----
-
 ## 🗂️ Modelo de Dados
 
 **Banco:** `patinhas_carinho`
 
-| Coleção | O que guarda | Relacionamentos |
-|---|---|---|
-| `tutores` | Dados do tutor, com endereço **embutido** | — |
-| `pets` | Dados do pet, com campos variáveis por espécie | `tutor_id` → `tutores` (**referência**) |
-| `prestadores` | Passeadores e hospedagens, com localização e serviços **embutidos** | — |
-| `visitas` | Passeio ou estadia, com trajeto ou diário, ocorrências, fotos e avaliação **embutidos** | `pet_id` → `pets`, `prestador_id` → `prestadores` (**referências**) |
+O sistema usa o **modelo orientado a documentos**: o que pertence a uma coisa e é lido junto com ela fica **aninhado** dentro dela, formando um único documento (um *agregado*).
 
-**Critério para embutir ou referenciar:**
-- **Embutir** o que é lido junto e cresce pouco (endereço, ocorrências do passeio, avaliação).
-- **Referenciar** o que é compartilhado ou cresce sem limite (um tutor tem vários pets; um pet tem muitas visitas).
+- Cada **tutor** guarda dentro de si a lista dos seus **pets**.
+- Cada **pet** guarda dentro de si a lista das suas **visitas** (passeios e hospedagens).
+- Os **prestadores** ficam numa **coleção separada**, porque são compartilhados por vários tutores e visitas — duplicá-los dentro de cada tutor seria repetição desnecessária.
 
-**Duplicação proposital:** `visitas` guarda uma cópia de `pet_nome` e `prestador_nome`, para exibir o relatório sem consultar outras coleções. Em troca, se um nome mudar, as cópias antigas ficam desatualizadas.
+| Coleção | O que guarda |
+|---|---|
+| `tutores` | O tutor, com o endereço embutido, a **lista de pets**, e dentro de cada pet a **lista de visitas**. É a coleção principal. |
+| `prestadores` | Passeadores e hospedagens, com localização (GeoJSON) e serviços. Coleção separada. |
 
-**Validação:** a coleção `visitas` exige os campos `tipo`, `pet_id`, `prestador_id`, `inicio` e `status`, e aceita apenas valores definidos para `tipo` e `status`.
+**Como as partes se ligam:**
+- **Pet dentro de tutor** e **visita dentro de pet** → *aninhado* (lidos sempre junto com o tutor).
+- **Visita → prestador** → *referência*: a visita guarda o `prestador_id` (e uma cópia do `prestador_nome`, para exibir o relatório sem precisar consultar a outra coleção).
 
-### Exemplo de documento (`visitas`, tipo passeio)
+### 🧠 Por que aninhar?
+
+O relatório de um tutor (seus pets e as visitas de cada um) é quase sempre lido de uma vez. No MongoDB, isso vira **um único documento**, buscado numa tacada só — sem os vários JOINs que o modelo relacional exigiria para remontar tudo. Além disso, o esquema é flexível: o gato tem `indoor`, o coelho tem `dieta`, o passeio tem `trajeto` e a hospedagem tem `diario`, tudo no mesmo lugar.
+
+> **Nota de evolução futura:** a lista de visitas dentro de um pet cresce a cada atendimento. Para um volume muito grande no futuro, as visitas poderiam virar uma coleção própria referenciando o pet. Para o tamanho deste projeto, mantê-las aninhadas é mais simples e atende bem.
+
+### Exemplo de documento (`tutores`)
 
 ```json
 {
-  "tipo": "passeio",
-  "status": "concluida",
-  "pet_id": "<ObjectId do pet>",
-  "pet_nome": "Rex",
-  "prestador_id": "<ObjectId do prestador>",
-  "prestador_nome": "João Passeios",
-  "inicio": "2026-10-02T08:00:00Z",
-  "fim": "2026-10-02T08:30:00Z",
-  "trajeto": { "type": "LineString", "coordinates": [[-48.278, -18.915], [-48.277, -18.916]] },
-  "ocorrencias": [ { "tipo": "xixi", "hora": "08:12" } ],
-  "fotos": ["https://exemplo.com/fotos/rex1.jpg"],
-  "valor": 25.0,
-  "avaliacao": { "nota": 5, "comentario": "Ótimo passeio!" }
+  "_id": "<ObjectId do tutor>",
+  "nome": "Ana Souza",
+  "email": "ana@exemplo.com",
+  "telefone": "(34) 99999-0001",
+  "endereco": { "bairro": "Santa Mônica", "cidade": "Uberlândia", "uf": "MG" },
+  "pets": [
+    {
+      "_id": "<ObjectId do pet>",
+      "nome": "Rex",
+      "especie": "cao",
+      "raca": "Labrador",
+      "visitas": [
+        {
+          "tipo": "passeio",
+          "status": "concluida",
+          "prestador_id": "<ObjectId do prestador>",
+          "prestador_nome": "João Passeios",
+          "inicio": "2026-10-02T08:00:00Z",
+          "trajeto": { "type": "LineString", "coordinates": [[-48.278, -18.915], [-48.277, -18.916]] },
+          "avaliacao": { "nota": 5, "comentario": "Ótimo passeio!" }
+        }
+      ]
+    }
+  ]
 }
 ```
 
@@ -88,7 +94,7 @@ Nota e comentário do tutor ao final de cada atendimento.
 
 ## 🛠️ Arquitetura e Tecnologias
 
-O sistema tem **três camadas**, no mesmo padrão do exemplo da disciplina:
+O sistema tem **três camadas**:
 
 ```
 Streamlit (formulário)  →  FastAPI (API)  →  MongoDB Atlas (banco)
@@ -99,6 +105,16 @@ Streamlit (formulário)  →  FastAPI (API)  →  MongoDB Atlas (banco)
 - **Python + PyMongo** — linguagem e biblioteca que conectam a aplicação ao banco.
 - **FastAPI + Pydantic** — a API que recebe os cadastros e valida os dados antes de gravar.
 - **Streamlit** — a tela de formulário para cadastrar sem precisar escrever código.
+
+### Rotas da API (seguindo o aninhamento)
+
+| Método | Rota | O que faz |
+|---|---|---|
+| POST | `/tutores` | Cadastra um tutor |
+| POST | `/tutores/{tutor_id}/pets` | Adiciona um pet **dentro** de um tutor |
+| POST | `/tutores/{tutor_id}/pets/{pet_id}/visitas` | Adiciona uma visita **dentro** de um pet |
+| POST | `/prestadores` | Cadastra um prestador |
+| GET | `/tutores` · `/prestadores` | Lista o que está cadastrado |
 
 ---
 
@@ -124,7 +140,7 @@ Streamlit (formulário)  →  FastAPI (API)  →  MongoDB Atlas (banco)
    ```bash
    python criar_banco.py
    ```
-   O script cria o banco `patinhas_carinho` com as 4 coleções e insere dados fictícios: 2 tutores, 3 pets (cão, gato e coelho), 2 prestadores e 3 visitas. A cada execução, as coleções são apagadas e recriadas.
+   O script cria o banco `patinhas_carinho` com as coleções `tutores` (com pets e visitas aninhados) e `prestadores`, e insere dados fictícios. A cada execução, as coleções são apagadas e recriadas.
 5. **Suba a API** (deixe este terminal aberto):
    ```bash
    uvicorn main:app --reload
@@ -135,12 +151,14 @@ Streamlit (formulário)  →  FastAPI (API)  →  MongoDB Atlas (banco)
    streamlit run app.py
    ```
 
+> Para o professor avaliar: basta ler o código e o modelo de dados acima. Para rodar, use uma conta própria do MongoDB Atlas (preenchendo o `.env` conforme o `.env.exemplo`) e siga os passos acima.
+
 | Arquivo | Conteúdo |
 |---|---|
 | `A1/database.py` | Conexão com o MongoDB Atlas (lê a `MONGO_URI` do `.env`) |
-| `A1/modelos.py` | Modelos Pydantic que validam os dados das 4 entidades |
+| `A1/modelos.py` | Modelos Pydantic (tutor → pets → visitas; prestador) |
 | `A1/criar_banco.py` | Criação das coleções e inserção dos documentos de exemplo |
-| `A1/main.py` | API FastAPI com os endpoints de cadastro e listagem |
+| `A1/main.py` | API FastAPI com as rotas aninhadas e de listagem |
 | `A1/app.py` | Formulário web (Streamlit) de cadastro |
 | `A1/requirements.txt` | Bibliotecas Python necessárias |
 | `A1/.env.exemplo` | Modelo do arquivo de configuração da conexão |
