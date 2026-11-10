@@ -1,31 +1,47 @@
 """
 Formulário web (Streamlit) do Pet Center.
 
-Segue o modelo aninhado: para cadastrar um PET você escolhe o TUTOR dono; para
-cadastrar uma VISITA você escolhe o tutor, depois o pet, depois o prestador.
+A tela funciona por PERFIL, como num sistema de verdade:
+
+- TUTOR: cria seu cadastro, cadastra os próprios pets, vê a vitrine de
+  serviços, solicita um serviço escolhendo a data (sem poder mexer no valor,
+  que o sistema calcula) e acompanha seus agendamentos.
+- PRESTADOR: cria seu cadastro, monta o catálogo de serviços, recebe as
+  solicitações e ACEITA ou RECUSA cada uma.
+
+Datas aparecem sempre no formato brasileiro (DD/MM/AAAA). No banco elas são
+guardadas no padrão internacional (AAAA-MM-DD), que é o correto para ordenar
+e comparar.
 
 Autores: Henrique Souza e Yuri Cainã
 
 Como rodar (a API precisa estar rodando antes):  streamlit run app.py
 """
+from datetime import date, datetime, time, timedelta
+
 import requests
 import streamlit as st
 
 API_URL = "http://localhost:8000"
+FORMATO = "DD/MM/YYYY"          # formato mostrado nos seletores de data
 
-st.set_page_config(page_title="Pet Center", page_icon="🐾")
-st.title("🐾 Pet Center — Cadastro")
+ESPECIES = ["Cachorro", "Gato", "Outro"]
+PORTES = ["Pequeno", "Médio", "Grande"]
 
-entidade = st.sidebar.selectbox(
-    "O que você quer cadastrar?",
-    ["Tutor", "Pet", "Visita", "Prestador"],
-)
+HOJE = date.today()
+MIN_ADULTO, MIN_PET = date(1930, 1, 1), date(1995, 1, 1)
+MAX_AGENDA = HOJE + timedelta(days=365)
+
+st.set_page_config(page_title="Pet Center", page_icon="🐾", layout="centered")
+st.title("🐾 Pet Center")
 
 
+# ---------------------------------------------------------------------
+# Conversa com a API
+# ---------------------------------------------------------------------
 def buscar(caminho):
-    """Faz um GET na API e devolve a lista (vazia se a API estiver fora)."""
     try:
-        resposta = requests.get(f"{API_URL}{caminho}", timeout=5)
+        resposta = requests.get(f"{API_URL}{caminho}", timeout=10)
         if resposta.status_code == 200:
             return resposta.json()
     except requests.exceptions.ConnectionError:
@@ -33,190 +49,401 @@ def buscar(caminho):
     return []
 
 
-def enviar(caminho, payload):
-    """Envia o payload para a API e mostra o resultado."""
+def enviar(caminho, payload, sucesso="Cadastrado com sucesso!"):
     try:
-        resposta = requests.post(f"{API_URL}{caminho}", json=payload, timeout=5)
+        resposta = requests.post(f"{API_URL}{caminho}", json=payload, timeout=10)
         if resposta.status_code == 200:
-            st.success("Cadastrado com sucesso!")
+            st.success(sucesso)
             return True
-        st.error(f"Erro ao cadastrar: {resposta.json().get('detail')}")
+        st.error(f"Não deu certo: {resposta.json().get('detail')}")
     except requests.exceptions.ConnectionError:
         st.error("API offline. Rode 'python -m uvicorn main:app' em outro terminal.")
     return False
 
 
-# ---------------------------------------------------------------------
-# TUTOR
-# ---------------------------------------------------------------------
-if entidade == "Tutor":
-    st.subheader("Cadastro de tutor")
-    with st.form("form_tutor"):
-        nome = st.text_input("Nome", placeholder="Ex: Ana Souza")
-        email = st.text_input("E-mail", placeholder="Ex: ana@exemplo.com")
-        telefone = st.text_input("Telefone", placeholder="Ex: (34) 99999-0001")
-        bairro = st.text_input("Bairro", placeholder="Ex: Santa Mônica")
-        cidade = st.text_input("Cidade", value="Uberlândia")
-        uf = st.text_input("UF", value="MG", max_chars=2)
-        if st.form_submit_button("Cadastrar tutor"):
-            enviar("/tutores", {
-                "nome": nome,
-                "email": email,
-                "telefone": telefone,
-                "endereco": {"bairro": bairro, "cidade": cidade, "uf": uf},
-            })
-
-# ---------------------------------------------------------------------
-# PET (dentro de um tutor)
-# ---------------------------------------------------------------------
-elif entidade == "Pet":
-    st.subheader("Cadastro de pet (dentro de um tutor)")
-    tutores = buscar("/tutores")
-    if not tutores:
-        st.info("Cadastre um tutor primeiro.")
-    else:
-        tutor = st.selectbox("Tutor dono do pet", tutores, format_func=lambda t: t["nome"])
-        with st.form("form_pet"):
-            nome = st.text_input("Nome do pet", placeholder="Ex: Rex")
-            especie = st.selectbox("Espécie", ["cao", "gato", "coelho", "outro"])
-            raca = st.text_input("Raça (opcional)")
-            porte = st.selectbox("Porte (opcional)", ["", "pequeno", "medio", "grande"])
-            peso = st.number_input("Peso em kg (opcional)", min_value=0.0, value=0.0, step=0.5)
-            alergias = st.text_input("Alergias (separadas por vírgula, opcional)")
-            if st.form_submit_button("Cadastrar pet"):
-                payload = {"nome": nome, "especie": especie}
-                if raca:
-                    payload["raca"] = raca
-                if porte:
-                    payload["porte"] = porte
-                if peso:
-                    payload["peso_kg"] = peso
-                if alergias:
-                    payload["alergias"] = [a.strip() for a in alergias.split(",")]
-                enviar(f"/tutores/{tutor['_id']}/pets", payload)
-
-# ---------------------------------------------------------------------
-# VISITA (dentro de um pet)
-# ---------------------------------------------------------------------
-elif entidade == "Visita":
-    st.subheader("Cadastro de visita (dentro de um pet)")
-    tutores = buscar("/tutores")
-    prestadores = buscar("/prestadores")
-    if not tutores:
-        st.info("Cadastre um tutor e um pet primeiro.")
-    elif not prestadores:
-        st.info("Cadastre um prestador primeiro.")
-    else:
-        tutor = st.selectbox("Tutor", tutores, format_func=lambda t: t["nome"])
-        pets = tutor.get("pets", [])
-        if not pets:
-            st.info("Esse tutor ainda não tem pet. Cadastre um pet para ele primeiro.")
-        else:
-            pet = st.selectbox("Pet", pets, format_func=lambda p: p["nome"])
-            prestador = st.selectbox("Prestador", prestadores, format_func=lambda p: p["nome"])
-            with st.form("form_visita"):
-                tipo = st.selectbox("Tipo", ["passeio", "hospedagem"])
-                status = st.selectbox(
-                    "Status", ["agendada", "em_andamento", "concluida", "cancelada"]
-                )
-                inicio = st.text_input("Início (AAAA-MM-DD HH:MM)", value="2026-10-10 08:00")
-                fim = st.text_input("Fim (AAAA-MM-DD HH:MM, opcional)", value="2026-10-10 08:30")
-                valor = st.number_input("Valor", min_value=0.0, value=25.0)
-                nota = st.slider("Nota da avaliação", 1, 5, 5)
-                comentario = st.text_input("Comentário da avaliação (opcional)")
-                if st.form_submit_button("Cadastrar visita"):
-                    payload = {
-                        "tipo": tipo,
-                        "status": status,
-                        "prestador_id": prestador["_id"],
-                        "prestador_nome": prestador["nome"],
-                        "inicio": inicio.strip().replace(" ", "T"),
-                        "valor": valor,
-                        "avaliacao": {"nota": nota, "comentario": comentario or None},
-                    }
-                    if fim.strip():
-                        payload["fim"] = fim.strip().replace(" ", "T")
-                    enviar(f"/tutores/{tutor['_id']}/pets/{pet['_id']}/visitas", payload)
-
-# ---------------------------------------------------------------------
-# PRESTADOR (coleção separada)
-# ---------------------------------------------------------------------
-else:
-    st.subheader("Cadastro de prestador")
-    with st.form("form_prestador"):
-        tipo = st.selectbox("Tipo", ["passeador", "hospedagem"])
-        nome = st.text_input("Nome", placeholder="Ex: João Passeios")
-        longitude = st.number_input("Longitude", value=-48.278, format="%.6f")
-        latitude = st.number_input("Latitude", value=-18.915, format="%.6f")
-        especies = st.multiselect(
-            "Espécies aceitas", ["cao", "gato", "coelho"], default=["cao"]
+def mudar_status(evento_id, status):
+    try:
+        resposta = requests.patch(
+            f"{API_URL}/eventos/{evento_id}/status", json={"status": status}, timeout=10
         )
-        serv_nome = st.text_input("Serviço — nome", value="Passeio 30 min")
-        serv_preco = st.number_input("Serviço — preço", min_value=0.0, value=25.0)
-        if st.form_submit_button("Cadastrar prestador"):
-            enviar("/prestadores", {
-                "tipo": tipo,
-                "nome": nome,
-                "localizacao": {"type": "Point", "coordinates": [longitude, latitude]},
-                "especies_aceitas": especies,
-                "servicos": [{"nome": serv_nome, "preco": serv_preco}],
-            })
+        if resposta.status_code == 200:
+            return True
+        st.error(f"Não deu certo: {resposta.json().get('detail')}")
+    except requests.exceptions.ConnectionError:
+        st.error("API offline.")
+    return False
 
 
 # ---------------------------------------------------------------------
-# Lista o que já foi cadastrado, mostrando o aninhamento.
+# Datas no formato brasileiro
 # ---------------------------------------------------------------------
-st.divider()
-st.subheader("📋 Já cadastrados")
+def br(valor, com_hora=False):
+    """Mostra uma data vinda do banco no formato DD/MM/AAAA."""
+    if not valor:
+        return "—"
+    texto = str(valor)
+    try:
+        momento = datetime.fromisoformat(texto.replace("Z", "+00:00"))
+        return momento.strftime("%d/%m/%Y %H:%M" if com_hora else "%d/%m/%Y")
+    except ValueError:
+        try:
+            return datetime.strptime(texto[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+        except ValueError:
+            return texto
 
-aba_tutores, aba_prestadores = st.tabs(["Tutores (com pets e visitas)", "Prestadores"])
 
-with aba_tutores:
+def rotulo_servico(s):
+    if s.get("tipo") == "Hospedagem":
+        return (
+            f"{s.get('prestador_nome')} · Hospedagem · R$ {s.get('valor', 0):.2f} a diária"
+            f" (até {s.get('max_diarias') or 10} diárias)"
+        )
+    return (
+        f"{s.get('prestador_nome')} · Passeio {s.get('tempo_duracao') or ''}"
+        f" · R$ {s.get('valor', 0):.2f}"
+    )
+
+
+# =====================================================================
+# QUEM ESTÁ USANDO (login simplificado, sem senha)
+# =====================================================================
+perfil = st.sidebar.radio("Entrar como", ["Tutor", "Prestador"])
+st.sidebar.caption("Login simplificado: escolha quem você é ou crie seu cadastro.")
+
+
+# =====================================================================
+# PERFIL TUTOR
+# =====================================================================
+if perfil == "Tutor":
     tutores = buscar("/tutores")
-    if not tutores:
-        st.caption("Nada cadastrado ainda.")
-    for tutor in tutores:
-        pets = tutor.get("pets", [])
-        with st.expander(f"👤 {tutor['nome']} — {len(pets)} pet(s)"):
-            endereco = tutor.get("endereco", {})
-            st.write(
-                f"✉️ {tutor.get('email', '')}  ·  📞 {tutor.get('telefone', '')}  "
-                f"·  📍 {endereco.get('cidade', '')}/{endereco.get('uf', '')}"
+    eu = st.sidebar.selectbox(
+        "Quem é você?",
+        [None] + tutores,
+        format_func=lambda t: "➕ Criar meu cadastro" if t is None else t["nome"],
+    )
+
+    # ---------------- criar cadastro de tutor ----------------
+    if eu is None:
+        st.subheader("Criar meu cadastro de tutor")
+        with st.form("form_tutor"):
+            nome = st.text_input("Nome completo", placeholder="Ex: Ana Souza")
+            endereco = st.text_input(
+                "Endereço", placeholder="Ex: Rua Goiás, 100 - Santa Mônica, Uberlândia/MG"
             )
-            if not pets:
-                st.caption("Sem pets ainda.")
-            for pet in pets:
-                visitas = pet.get("visitas", [])
-                st.markdown(
-                    f"**🐾 {pet['nome']}** ({pet.get('especie', '')}) — {len(visitas)} visita(s)"
-                )
-                if visitas:
-                    st.table([
-                        {
-                            "Tipo": v.get("tipo", ""),
-                            "Status": v.get("status", ""),
-                            "Prestador": v.get("prestador_nome", ""),
-                            "Valor (R$)": v.get("valor", "-"),
-                            "Nota": (v.get("avaliacao") or {}).get("nota", "-"),
-                        }
-                        for v in visitas
-                    ])
+            telefone = st.text_input("Telefone", placeholder="Ex: (34) 99999-0001")
+            nascimento = st.date_input(
+                "Data de nascimento", value=date(1995, 1, 1),
+                min_value=MIN_ADULTO, max_value=HOJE, format=FORMATO,
+            )
+            if st.form_submit_button("Criar cadastro"):
+                if enviar("/tutores", {
+                    "nome": nome, "endereco": endereco, "telefone": telefone,
+                    "data_nascimento": nascimento.isoformat(),
+                }, "Cadastro criado! Agora selecione o seu nome no menu lateral."):
+                    st.rerun()
 
-with aba_prestadores:
-    prestadores = buscar("/prestadores")
-    if not prestadores:
-        st.caption("Nada cadastrado ainda.")
+    # ---------------- área do tutor ----------------
     else:
-        st.dataframe(
-            [
-                {
-                    "Nome": p.get("nome", ""),
-                    "Tipo": p.get("tipo", ""),
-                    "Espécies aceitas": ", ".join(p.get("especies_aceitas", [])),
-                    "Nº de serviços": len(p.get("servicos", [])),
-                }
-                for p in prestadores
-            ],
-            use_container_width=True,
-            hide_index=True,
+        st.caption(f"Conectado como tutor: **{eu['nome']}**")
+        meus_pets = eu.get("pets", [])
+        aba_pets, aba_servicos, aba_agenda = st.tabs(
+            ["🐾 Meus pets", "🔎 Serviços disponíveis", "📅 Meus agendamentos"]
         )
+
+        # --- meus pets ---
+        with aba_pets:
+            if meus_pets:
+                st.table([
+                    {
+                        "Nome": p.get("nome", ""),
+                        "Espécie": p.get("especie", ""),
+                        "Raça": p.get("raca", ""),
+                        "Porte": p.get("porte", ""),
+                        "Peso (kg)": p.get("peso_kg", ""),
+                        "Nascimento": f"{br((p.get('data_nascimento') or {}).get('data'))}"
+                                      f" ({(p.get('data_nascimento') or {}).get('tipo', '')})",
+                        "Alergia": "Sim" if p.get("possui_alergia") else "Não",
+                        "Passeios/dia": p.get("qtde_passeios_dia", ""),
+                    }
+                    for p in meus_pets
+                ])
+            else:
+                st.info("Você ainda não cadastrou nenhum pet.")
+
+            with st.expander("➕ Cadastrar um pet", expanded=not meus_pets):
+                with st.form("form_pet"):
+                    nome = st.text_input("Nome do pet", placeholder="Ex: Rex")
+                    especie = st.selectbox("Espécie", ESPECIES)
+                    raca = st.text_input("Raça", value="SRD")
+                    peso = st.number_input("Peso (kg)", min_value=0.1, value=10.0, step=0.5)
+                    porte = st.selectbox("Porte", PORTES)
+                    nasc = st.date_input(
+                        "Data de nascimento do pet", value=date(2021, 1, 1),
+                        min_value=MIN_PET, max_value=HOJE, format=FORMATO,
+                    )
+                    nasc_tipo = st.selectbox("Essa data é", ["Exata", "Aproximada"])
+                    tem_alergia = st.checkbox("Possui alergia ou doença")
+                    detalhes = st.text_input("Detalhes da alergia/doença (se houver)")
+                    qtde = st.selectbox("Passeios por dia", [1, 2, 3])
+                    obs = st.text_area("Observações (opcional)")
+                    if st.form_submit_button("Cadastrar pet"):
+                        if enviar(f"/tutores/{eu['_id']}/pets", {
+                            "nome": nome, "especie": especie, "raca": raca,
+                            "peso_kg": peso, "porte": porte,
+                            "data_nascimento": {"data": nasc.isoformat(), "tipo": nasc_tipo},
+                            "possui_alergia": tem_alergia,
+                            "detalhes_alergia": detalhes if tem_alergia else None,
+                            "qtde_passeios_dia": qtde,
+                            "observacoes": obs or None,
+                        }, "Pet cadastrado!"):
+                            st.rerun()
+
+        # --- vitrine de serviços + solicitação ---
+        with aba_servicos:
+            catalogo = buscar("/servicos")
+            if not catalogo:
+                st.info("Ainda não há serviços cadastrados pelos prestadores.")
+            else:
+                st.dataframe(
+                    [
+                        {
+                            "Prestador": s.get("prestador_nome", ""),
+                            "Tipo": s.get("tipo", ""),
+                            "Duração / diárias": (
+                                f"até {s.get('max_diarias')} diárias"
+                                if s.get("tipo") == "Hospedagem"
+                                else s.get("tempo_duracao", "")
+                            ),
+                            "Valor (R$)": s.get("valor", ""),
+                            "Espécies": ", ".join(s.get("especies_aceitas", [])),
+                            "Portes": ", ".join(s.get("portes_aceitos", [])),
+                            "Aceita alergia": "Sim" if s.get("aceita_animais_com_alergia_doenca") else "Não",
+                        }
+                        for s in catalogo
+                    ],
+                    use_container_width=True, hide_index=True,
+                )
+
+                st.divider()
+                st.markdown("### Solicitar um serviço")
+                if not meus_pets:
+                    st.warning("Cadastre um pet antes de solicitar um serviço.")
+                else:
+                    servico = st.selectbox(
+                        "Escolha o serviço", catalogo, format_func=rotulo_servico
+                    )
+                    pets_escolhidos = st.multiselect(
+                        "Para qual(is) pet(s)?", meus_pets,
+                        format_func=lambda p: p["nome"], default=[meus_pets[0]],
+                    )
+                    coluna_data, coluna_hora = st.columns(2)
+                    with coluna_data:
+                        dia = st.date_input(
+                            "Data desejada", value=HOJE,
+                            min_value=HOJE, max_value=MAX_AGENDA, format=FORMATO,
+                        )
+                    with coluna_hora:
+                        hora = st.time_input("Horário", value=time(8, 0))
+
+                    if servico.get("tipo") == "Hospedagem":
+                        diarias = st.number_input(
+                            "Quantas diárias?", min_value=1,
+                            max_value=int(servico.get("max_diarias") or 10), value=1, step=1,
+                        )
+                        total = float(servico.get("valor", 0)) * diarias
+                    else:
+                        diarias = None
+                        total = float(servico.get("valor", 0))
+
+                    st.metric("Valor total (calculado pelo sistema)", f"R$ {total:.2f}")
+                    st.caption("O valor é definido pelo serviço: você não precisa preenchê-lo.")
+
+                    if st.button("Solicitar serviço", type="primary"):
+                        if not pets_escolhidos:
+                            st.warning("Escolha pelo menos um pet.")
+                        else:
+                            corpo = {
+                                "tutor_id": eu["_id"],
+                                "prestador_id": servico["prestador_id"],
+                                "servico_id": servico["servico_id"],
+                                "pets_envolvidos": [p["pet_id"] for p in pets_escolhidos],
+                                "data_inicio": datetime.combine(dia, hora).isoformat(),
+                            }
+                            if diarias:
+                                corpo["qtde_diarias"] = int(diarias)
+                            enviar("/eventos", corpo,
+                                   "Solicitação enviada! Aguarde o prestador aceitar.")
+
+        # --- meus agendamentos ---
+        with aba_agenda:
+            meus_eventos = buscar(f"/eventos?tutor_id={eu['_id']}")
+            if not meus_eventos:
+                st.info("Você ainda não solicitou nenhum serviço.")
+            else:
+                st.dataframe(
+                    [
+                        {
+                            "Situação": e.get("status", ""),
+                            "Tipo": e.get("tipo_evento", ""),
+                            "Prestador": (e.get("snapshot") or {}).get("prestador_nome", ""),
+                            "Pets": ", ".join((e.get("snapshot") or {}).get("pets_nomes", [])),
+                            "Início": br(e.get("data_inicio"), com_hora=True),
+                            "Fim": br(e.get("data_fim"), com_hora=True),
+                            "Diárias": e.get("qtde_diarias") or "—",
+                            "Total (R$)": e.get("valor_total", ""),
+                        }
+                        for e in meus_eventos
+                    ],
+                    use_container_width=True, hide_index=True,
+                )
+
+
+# =====================================================================
+# PERFIL PRESTADOR
+# =====================================================================
+else:
+    prestadores = buscar("/prestadores")
+    eu = st.sidebar.selectbox(
+        "Quem é você?",
+        [None] + prestadores,
+        format_func=lambda p: "➕ Criar meu cadastro" if p is None else p["nome"],
+    )
+
+    # ---------------- criar cadastro de prestador ----------------
+    if eu is None:
+        st.subheader("Criar meu cadastro de prestador")
+        with st.form("form_prestador"):
+            nome = st.text_input("Nome", placeholder="Ex: João Passeios")
+            endereco = st.text_input("Endereço", placeholder="Ex: Rua das Acácias, 250 - Uberlândia/MG")
+            telefone = st.text_input("Telefone", placeholder="Ex: (34) 98888-0001")
+            nascimento = st.date_input(
+                "Data de nascimento", value=date(1995, 1, 1),
+                min_value=MIN_ADULTO, max_value=HOJE, format=FORMATO,
+            )
+            tipos = st.selectbox("O que você oferece?", ["Passeio", "Hospedagem", "Ambos"])
+            if st.form_submit_button("Criar cadastro"):
+                if enviar("/prestadores", {
+                    "nome": nome, "endereco": endereco, "telefone": telefone,
+                    "data_nascimento": nascimento.isoformat(),
+                    "tipos_servicos_gerais": tipos,
+                }, "Cadastro criado! Agora selecione o seu nome no menu lateral."):
+                    st.rerun()
+
+    # ---------------- área do prestador ----------------
+    else:
+        st.caption(f"Conectado como prestador: **{eu['nome']}**")
+        meus_servicos = eu.get("servicos_oferecidos", [])
+        aba_servicos, aba_pedidos, aba_agenda = st.tabs(
+            ["🧾 Meus serviços", "📬 Solicitações", "📅 Minha agenda"]
+        )
+
+        # --- catálogo do prestador ---
+        with aba_servicos:
+            if meus_servicos:
+                st.table([
+                    {
+                        "Tipo": s.get("tipo", ""),
+                        "Duração / diárias": (
+                            f"até {s.get('max_diarias')} diárias"
+                            if s.get("tipo") == "Hospedagem" else s.get("tempo_duracao", "")
+                        ),
+                        "Valor (R$)": s.get("valor", ""),
+                        "Espécies": ", ".join(s.get("especies_aceitas", [])),
+                        "Portes": ", ".join(s.get("portes_aceitos", [])),
+                        "Aceita alergia": "Sim" if s.get("aceita_animais_com_alergia_doenca") else "Não",
+                    }
+                    for s in meus_servicos
+                ])
+            else:
+                st.info("Você ainda não cadastrou nenhum serviço.")
+
+            with st.expander("➕ Cadastrar um serviço", expanded=not meus_servicos):
+                tipo = st.selectbox("Tipo de serviço", ["Passeio", "Hospedagem"])
+                if tipo == "Hospedagem":
+                    duracao = None
+                    max_diarias = st.number_input(
+                        "Diárias disponíveis (de 1 a 10)",
+                        min_value=1, max_value=10, value=5, step=1,
+                    )
+                    valor = st.number_input(
+                        "Valor da DIÁRIA (R$)", min_value=0.0, value=60.0, step=5.0
+                    )
+                else:
+                    max_diarias = None
+                    duracao = st.text_input("Tempo de duração", value="30 min")
+                    valor = st.number_input(
+                        "Valor do passeio (R$)", min_value=0.0, value=25.0, step=5.0
+                    )
+                especies = st.multiselect("Espécies aceitas", ESPECIES, default=["Cachorro"])
+                portes = st.multiselect("Portes aceitos", PORTES, default=PORTES)
+                aceita = st.checkbox("Aceito animais com alergia/doença")
+
+                if st.button("Cadastrar serviço", type="primary"):
+                    corpo = {
+                        "tipo": tipo,
+                        "tempo_duracao": duracao,
+                        "max_diarias": int(max_diarias) if max_diarias else None,
+                        "especies_aceitas": especies,
+                        "portes_aceitos": portes,
+                        "valor": valor,
+                        "aceita_animais_com_alergia_doenca": aceita,
+                    }
+                    if enviar(f"/prestadores/{eu['_id']}/servicos", corpo, "Serviço cadastrado!"):
+                        st.rerun()
+
+        # --- solicitações para aceitar ou recusar ---
+        with aba_pedidos:
+            pedidos = buscar(f"/eventos?prestador_id={eu['_id']}&status=Solicitado")
+            if not pedidos:
+                st.info("Nenhuma solicitação pendente.")
+            for pedido in pedidos:
+                snap = pedido.get("snapshot") or {}
+                with st.container(border=True):
+                    st.markdown(
+                        f"**{pedido.get('tipo_evento')}** para "
+                        f"**{', '.join(snap.get('pets_nomes', []))}** "
+                        f"— tutor {snap.get('tutor_nome', '')}"
+                    )
+                    detalhe = f"🗓️ {br(pedido.get('data_inicio'), com_hora=True)}"
+                    if pedido.get("qtde_diarias"):
+                        detalhe += f"  ·  {pedido['qtde_diarias']} diária(s)"
+                    detalhe += f"  ·  💰 R$ {pedido.get('valor_total', 0):.2f}"
+                    st.write(detalhe)
+
+                    botao_sim, botao_nao = st.columns(2)
+                    with botao_sim:
+                        if st.button("✅ Aceitar", key=f"ok_{pedido['_id']}",
+                                     type="primary", use_container_width=True):
+                            if mudar_status(pedido["_id"], "Confirmado"):
+                                st.rerun()
+                    with botao_nao:
+                        if st.button("❌ Recusar", key=f"no_{pedido['_id']}",
+                                     use_container_width=True):
+                            if mudar_status(pedido["_id"], "Cancelado"):
+                                st.rerun()
+
+        # --- agenda do prestador ---
+        with aba_agenda:
+            agenda = [
+                e for e in buscar(f"/eventos?prestador_id={eu['_id']}")
+                if e.get("status") != "Solicitado"
+            ]
+            if not agenda:
+                st.info("Nada agendado ainda.")
+            else:
+                st.dataframe(
+                    [
+                        {
+                            "Situação": e.get("status", ""),
+                            "Tipo": e.get("tipo_evento", ""),
+                            "Tutor": (e.get("snapshot") or {}).get("tutor_nome", ""),
+                            "Pets": ", ".join((e.get("snapshot") or {}).get("pets_nomes", [])),
+                            "Início": br(e.get("data_inicio"), com_hora=True),
+                            "Fim": br(e.get("data_fim"), com_hora=True),
+                            "Diárias": e.get("qtde_diarias") or "—",
+                            "Total (R$)": e.get("valor_total", ""),
+                        }
+                        for e in agenda
+                    ],
+                    use_container_width=True, hide_index=True,
+                )

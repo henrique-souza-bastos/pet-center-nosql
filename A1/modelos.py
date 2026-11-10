@@ -1,11 +1,18 @@
 """
 Modelos Pydantic (validação dos dados) do Pet Center.
 
-Estrutura de documento ANINHADA, como pede o modelo orientado a documentos:
-- cada TUTOR guarda a lista dos seus PETS;
-- cada PET guarda a lista das suas VISITAS.
-Os PRESTADORES ficam numa coleção separada, porque são compartilhados por
-vários tutores e visitas (não faz sentido duplicá-los dentro de cada tutor).
+Estrutura NoSQL em 3 coleções:
+- TUTORES: dados do tutor + array "pets" embutido.
+- PRESTADORES: dados do prestador + array "servicos_oferecidos" embutido.
+- EVENTOS: coleção separada de agendamentos, que referencia tutor, prestador,
+  serviço e pets, e guarda um "snapshot" com os nomes.
+
+Regras de negócio importantes:
+- O tutor NÃO informa o valor: quem calcula é a API, a partir do serviço.
+- Passeio: o valor é o valor do serviço.
+- Hospedagem: o prestador informa o valor da DIÁRIA e quantas diárias tem
+  disponíveis (1 a 10); o tutor escolhe a quantidade e o total é calculado.
+- Todo evento nasce com status "Solicitado"; o prestador aceita ou recusa.
 
 Autores: Henrique Souza e Yuri Cainã
 """
@@ -14,115 +21,92 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
-# ---------------------------------------------------------------------
-# Pedaços reaproveitados
-# ---------------------------------------------------------------------
-class Endereco(BaseModel):
-    bairro: str
-    cidade: str
-    uf: str
+# Valores aceitos em vários lugares do sistema
+TIPOS_SERVICO = ["Passeio", "Hospedagem"]
+STATUS_EVENTO = [
+    "Solicitado", "Confirmado", "Em Andamento", "Concluído", "Cancelado",
+]
 
 
-class Medicamento(BaseModel):
-    nome: str
-    horarios: List[str] = []
+# =====================================================================
+# TUTORES (com pets embutidos)
+# =====================================================================
+class DataNascimento(BaseModel):
+    """Nascimento do pet: a data e se ela é exata ou aproximada."""
+    data: str                 # ex: "2019-03-10"
+    tipo: str                 # "Exata" ou "Aproximada"
 
 
-class Ocorrencia(BaseModel):
-    tipo: str
-    hora: str
-
-
-class Trajeto(BaseModel):
-    type: str = "LineString"
-    coordinates: List[List[float]]
-
-
-class DiaHospedagem(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    data: str
-    alimentacao: Optional[str] = None
-    humor: Optional[str] = None
-    observacoes: Optional[str] = None
-
-
-class Avaliacao(BaseModel):
-    nota: int = Field(..., ge=1, le=5)
-    comentario: Optional[str] = None
-
-
-# ---------------------------------------------------------------------
-# VISITA - fica DENTRO de um pet. Referencia o prestador (que é de outra
-# coleção) e guarda uma cópia do nome dele, para exibir sem consultar nada.
-# ---------------------------------------------------------------------
-class Visita(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    tipo: str            # "passeio" ou "hospedagem"
-    status: str          # agendada, em_andamento, concluida, cancelada
-    prestador_id: str    # referência ao prestador
-    prestador_nome: str  # cópia, para mostrar sem consultar outra coleção
-    inicio: datetime
-    fim: Optional[datetime] = None
-    trajeto: Optional[Trajeto] = None            # passeio
-    diario: Optional[List[DiaHospedagem]] = None  # hospedagem
-    ocorrencias: List[Ocorrencia] = []
-    fotos: List[str] = []
-    observacoes: Optional[str] = None
-    valor: Optional[float] = None
-    avaliacao: Optional[Avaliacao] = None
-
-
-# ---------------------------------------------------------------------
-# PET - fica DENTRO de um tutor e carrega a lista das suas visitas.
-# "extra=allow" deixa cada espécie ter campos próprios (gato: indoor;
-# coelho: dieta).
-# ---------------------------------------------------------------------
 class Pet(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     nome: str
-    especie: str
-    raca: Optional[str] = None
-    porte: Optional[str] = None
-    peso_kg: Optional[float] = None
-    alergias: List[str] = []
-    medicamentos: List[Medicamento] = []
-    comportamento: Optional[dict] = None
-    visitas: List[Visita] = []
+    especie: str                       # ex: "Cachorro", "Gato"
+    raca: str                          # ex: "SRD", "Labrador"
+    peso_kg: float
+    porte: str                         # "Pequeno", "Médio", "Grande"
+    data_nascimento: DataNascimento
+    possui_alergia: bool = False
+    detalhes_alergia: Optional[str] = None   # preenchido só se possui_alergia
+    qtde_passeios_dia: int = Field(1, ge=1, le=3)
+    observacoes: Optional[str] = None
 
 
-# ---------------------------------------------------------------------
-# TUTOR - coleção principal. Guarda o endereço embutido e a lista de pets.
-# ---------------------------------------------------------------------
 class Tutor(BaseModel):
     nome: str
-    email: str
+    endereco: str
     telefone: str
-    endereco: Endereco
+    data_nascimento: str               # ex: "1990-05-20"
     pets: List[Pet] = []
 
 
-# ---------------------------------------------------------------------
-# PRESTADOR - coleção separada (passeadores e hospedagens).
-# ---------------------------------------------------------------------
-class Localizacao(BaseModel):
-    type: str = "Point"
-    coordinates: List[float]  # [longitude, latitude]
+# =====================================================================
+# PRESTADORES (com catálogo de serviços embutido)
+# =====================================================================
+class ServicoOferecido(BaseModel):
+    """
+    Uma oferta do prestador.
 
-
-class Servico(BaseModel):
-    nome: str
-    preco: float
+    - Passeio:    usa "tempo_duracao" e "valor" é o preço do passeio.
+    - Hospedagem: usa "max_diarias" (1 a 10 disponíveis) e "valor" é o preço
+                  da DIÁRIA.
+    """
+    tipo: str                                 # "Passeio" ou "Hospedagem"
+    tempo_duracao: Optional[str] = None       # só passeio: ex. "30 min"
+    max_diarias: Optional[int] = Field(None, ge=1, le=10)  # só hospedagem
+    especies_aceitas: List[str] = []
+    portes_aceitos: List[str] = []
+    valor: float                              # passeio: total | hospedagem: diária
+    aceita_animais_com_alergia_doenca: bool = False
 
 
 class Prestador(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    tipo: str  # "passeador" ou "hospedagem"
     nome: str
-    localizacao: Localizacao
-    especies_aceitas: List[str]
-    servicos: List[Servico] = []
+    endereco: str
+    telefone: str
+    data_nascimento: str
+    tipos_servicos_gerais: str         # "Passeio", "Hospedagem" ou "Ambos"
+    servicos_oferecidos: List[ServicoOferecido] = []
+
+
+# =====================================================================
+# EVENTOS
+# =====================================================================
+class EventoSolicitacao(BaseModel):
+    """
+    O que o TUTOR envia ao solicitar um serviço.
+
+    Repare que não existe campo de valor nem de status: quem define os dois é
+    a API, para o tutor não conseguir alterar o preço.
+    """
+    tutor_id: str
+    prestador_id: str
+    servico_id: str
+    pets_envolvidos: List[str] = []
+    data_inicio: datetime
+    qtde_diarias: Optional[int] = Field(None, ge=1, le=10)  # só hospedagem
+
+
+class AtualizacaoStatus(BaseModel):
+    """O que o PRESTADOR envia para aceitar, recusar ou andar com o evento."""
+    status: str

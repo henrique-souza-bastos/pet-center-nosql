@@ -2,8 +2,12 @@
 A1 - Criação do banco no MongoDB Atlas
 Pet Center: app de passeadores e hospedagem pet
 
-Estrutura de documento ANINHADA: cada TUTOR guarda seus PETS, e cada pet guarda
-suas VISITAS. Os PRESTADORES ficam numa coleção separada.
+Modelagem em 3 coleções:
+- "tutores": dados do tutor + array "pets" EMBUTIDO.
+- "prestadores": dados do prestador + array "servicos_oferecidos" EMBUTIDO.
+- "eventos": agendamentos (passeio/hospedagem) numa coleção SEPARADA, que
+  REFERENCIA tutor, prestador, serviço e pets, e guarda um SNAPSHOT com os
+  nomes do momento do agendamento (para listar histórico sem join).
 
 Cria o banco "patinhas_carinho", as coleções e insere documentos de exemplo.
 Todos os dados são fictícios.
@@ -18,8 +22,8 @@ from bson import ObjectId
 
 from database import banco
 
-COLECOES = ["tutores", "prestadores"]
-# coleções do modelo antigo (separado), apagadas numa eventual migração
+COLECOES = ["tutores", "prestadores", "eventos"]
+# coleções de modelagens anteriores, apagadas na migração
 COLECOES_ANTIGAS = ["pets", "visitas"]
 
 
@@ -29,161 +33,208 @@ def data(texto):
 
 
 # ---------------------------------------------------------------------
-# PRESTADORES - coleção separada. Criados antes para as visitas poderem
-# referenciá-los pelo id. "localizacao" usa GeoJSON [longitude, latitude].
+# IDs criados antes, para um documento poder referenciar o outro.
 # ---------------------------------------------------------------------
-passeador_joao = ObjectId()
-hospedagem_casa = ObjectId()
+joao_id, joao_passeio30, joao_passeio60 = ObjectId(), ObjectId(), ObjectId()
+casa_id, casa_diaria = ObjectId(), ObjectId()
 
+ana_id, rex_id, mia_id = ObjectId(), ObjectId(), ObjectId()
+bruno_id, thor_id = ObjectId(), ObjectId()
+
+
+# ---------------------------------------------------------------------
+# PRESTADORES - cada um com o seu catálogo de serviços embutido.
+# Cada serviço traz as próprias restrições (espécies, portes, alergia).
+# ---------------------------------------------------------------------
 prestadores = [
     {
-        "_id": passeador_joao,
-        "tipo": "passeador",
+        "_id": joao_id,
         "nome": "João Passeios",
-        "localizacao": {"type": "Point", "coordinates": [-48.278, -18.915]},
-        "especies_aceitas": ["cao"],
-        "servicos": [
-            {"nome": "Passeio 30 min", "preco": 25.0},
-            {"nome": "Passeio 60 min", "preco": 40.0},
+        "endereco": "Rua das Acácias, 250 - Santa Mônica, Uberlândia/MG",
+        "telefone": "(34) 98888-0001",
+        "data_nascimento": "1995-02-14",
+        "tipos_servicos_gerais": "Passeio",
+        "servicos_oferecidos": [
+            {
+                "servico_id": joao_passeio30,
+                "tipo": "Passeio",
+                "tempo_duracao": "30 min",
+                "especies_aceitas": ["Cachorro"],
+                "portes_aceitos": ["Pequeno", "Médio", "Grande"],
+                "valor": 25.0,
+                "aceita_animais_com_alergia_doenca": True,
+            },
+            {
+                "servico_id": joao_passeio60,
+                "tipo": "Passeio",
+                "tempo_duracao": "60 min",
+                "especies_aceitas": ["Cachorro"],
+                "portes_aceitos": ["Médio", "Grande"],
+                "valor": 40.0,
+                "aceita_animais_com_alergia_doenca": False,
+            },
         ],
     },
     {
-        "_id": hospedagem_casa,
-        "tipo": "hospedagem",
+        "_id": casa_id,
         "nome": "Casa do Pet Feliz",
-        "localizacao": {"type": "Point", "coordinates": [-48.265, -18.925]},
-        "especies_aceitas": ["cao", "gato", "coelho"],
-        "capacidade": 6,
-        "servicos": [
-            {"nome": "Diária cão", "preco": 60.0},
-            {"nome": "Diária gato", "preco": 45.0},
+        "endereco": "Av. Rondon Pacheco, 1200 - Centro, Uberlândia/MG",
+        "telefone": "(34) 98888-0002",
+        "data_nascimento": "1988-07-30",
+        "tipos_servicos_gerais": "Hospedagem",
+        "servicos_oferecidos": [
+            {
+                "servico_id": casa_diaria,
+                "tipo": "Hospedagem",
+                "max_diarias": 10,   # disponibilidade: o tutor pode pedir de 1 a 10
+                "especies_aceitas": ["Cachorro", "Gato"],
+                "portes_aceitos": ["Pequeno", "Médio"],
+                "valor": 60.0,       # valor da DIÁRIA (o total é diária x quantidade)
+                "aceita_animais_com_alergia_doenca": True,
+            },
         ],
     },
 ]
 
+
 # ---------------------------------------------------------------------
-# TUTORES - cada tutor guarda seus pets, e cada pet guarda suas visitas.
-# Tudo em um único documento (modelo aninhado / agregado).
+# TUTORES - cada tutor guarda os seus pets EMBUTIDOS.
 # ---------------------------------------------------------------------
 tutores = [
     {
-        "_id": ObjectId(),
+        "_id": ana_id,
         "nome": "Ana Souza",
-        "email": "ana@exemplo.com",
+        "endereco": "Rua Goiás, 100 - Santa Mônica, Uberlândia/MG",
         "telefone": "(34) 99999-0001",
-        "endereco": {"bairro": "Santa Mônica", "cidade": "Uberlândia", "uf": "MG"},
+        "data_nascimento": "1990-05-20",
         "pets": [
             {
-                "_id": ObjectId(),
+                "pet_id": rex_id,
                 "nome": "Rex",
-                "especie": "cao",
+                "especie": "Cachorro",
                 "raca": "Labrador",
-                "porte": "grande",
-                "peso_kg": 28,
-                "alergias": ["frango"],
-                "medicamentos": [{"nome": "Condroitina", "horarios": ["08:00", "20:00"]}],
-                "comportamento": {"agressivo_com_machos": False, "castrado": True},
-                "visitas": [
-                    {
-                        "tipo": "passeio",
-                        "status": "concluida",
-                        "prestador_id": passeador_joao,
-                        "prestador_nome": "João Passeios",
-                        "inicio": data("2026-10-02 08:00"),
-                        "fim": data("2026-10-02 08:30"),
-                        "trajeto": {
-                            "type": "LineString",
-                            "coordinates": [[-48.278, -18.915], [-48.277, -18.916], [-48.276, -18.917]],
-                        },
-                        "ocorrencias": [
-                            {"tipo": "xixi", "hora": "08:12"},
-                            {"tipo": "coco", "hora": "08:20"},
-                        ],
-                        "fotos": ["https://exemplo.com/fotos/rex1.jpg"],
-                        "observacoes": "Brincou bem com outros cães.",
-                        "valor": 25.0,
-                        "avaliacao": {"nota": 5, "comentario": "Ótimo passeio!"},
-                    },
-                    {
-                        "tipo": "passeio",
-                        "status": "concluida",
-                        "prestador_id": passeador_joao,
-                        "prestador_nome": "João Passeios",
-                        "inicio": data("2026-10-05 17:00"),
-                        "fim": data("2026-10-05 18:00"),
-                        "trajeto": {
-                            "type": "LineString",
-                            "coordinates": [[-48.278, -18.915], [-48.279, -18.914]],
-                        },
-                        "ocorrencias": [{"tipo": "xixi", "hora": "17:10"}],
-                        "fotos": [],
-                        "valor": 40.0,
-                        "avaliacao": {"nota": 4},
-                    },
-                ],
+                "peso_kg": 28.0,
+                "porte": "Grande",
+                "data_nascimento": {"data": "2019-03-10", "tipo": "Exata"},
+                "possui_alergia": True,
+                "detalhes_alergia": "Alergia a ração com frango.",
+                "qtde_passeios_dia": 2,
+                "observacoes": "Puxa bastante a guia no começo do passeio.",
             },
             {
-                "_id": ObjectId(),
+                "pet_id": mia_id,
                 "nome": "Mia",
-                "especie": "gato",
+                "especie": "Gato",
                 "raca": "SRD",
-                "alergias": [],
-                "indoor": True,  # campo que só faz sentido para gatos
-                "visitas": [
-                    {
-                        "tipo": "hospedagem",  # tem "diario" em vez de "trajeto"
-                        "status": "concluida",
-                        "prestador_id": hospedagem_casa,
-                        "prestador_nome": "Casa do Pet Feliz",
-                        "inicio": data("2026-09-20 12:00"),
-                        "fim": data("2026-09-23 12:00"),
-                        "diario": [
-                            {"data": "2026-09-20", "alimentacao": "ração 2x", "humor": "arisca",
-                             "observacoes": "Se escondeu no primeiro dia."},
-                            {"data": "2026-09-21", "alimentacao": "ração 2x", "humor": "calma"},
-                            {"data": "2026-09-22", "alimentacao": "ração 2x", "humor": "brincalhona"},
-                        ],
-                        "fotos": ["https://exemplo.com/fotos/mia1.jpg", "https://exemplo.com/fotos/mia2.jpg"],
-                        "valor": 135.0,
-                        "avaliacao": {"nota": 5, "comentario": "A Mia voltou tranquila."},
-                    },
-                ],
+                "peso_kg": 4.2,
+                "porte": "Pequeno",
+                "data_nascimento": {"data": "2020-01-01", "tipo": "Aproximada"},
+                "possui_alergia": False,
+                "detalhes_alergia": None,
+                "qtde_passeios_dia": 1,
+                "observacoes": "Gata de apartamento, não sai para passeios.",
             },
         ],
     },
     {
-        "_id": ObjectId(),
+        "_id": bruno_id,
         "nome": "Bruno Lima",
-        "email": "bruno@exemplo.com",
+        "endereco": "Rua Machado de Assis, 45 - Centro, Uberlândia/MG",
         "telefone": "(34) 99999-0002",
-        "endereco": {"bairro": "Centro", "cidade": "Uberlândia", "uf": "MG"},
+        "data_nascimento": "1985-11-02",
         "pets": [
             {
-                "_id": ObjectId(),
-                "nome": "Pipoca",
-                "especie": "coelho",
-                "dieta": {"feno": True, "racao_g_dia": 40},  # sem "raca", sem "porte"
-                "visitas": [],  # ainda sem visitas
+                "pet_id": thor_id,
+                "nome": "Thor",
+                "especie": "Cachorro",
+                "raca": "SRD",
+                "peso_kg": 15.0,
+                "porte": "Médio",
+                "data_nascimento": {"data": "2021-08-05", "tipo": "Aproximada"},
+                "possui_alergia": False,
+                "detalhes_alergia": None,
+                "qtde_passeios_dia": 3,
+                "observacoes": None,
             },
         ],
+    },
+]
+
+
+# ---------------------------------------------------------------------
+# EVENTOS - coleção separada. Guarda as REFERÊNCIAS (ids) e um SNAPSHOT
+# com os nomes do momento do agendamento, para listar o histórico rápido.
+# ---------------------------------------------------------------------
+eventos = [
+    {
+        "evento_id": ObjectId(),
+        "tipo_evento": "Passeio",
+        "status": "Concluído",
+        "data_inicio": data("2026-10-02 08:00"),
+        "data_fim": data("2026-10-02 08:30"),
+        "valor_total": 25.0,
+        "tutor_id": ana_id,
+        "prestador_id": joao_id,
+        "servico_id": joao_passeio30,
+        "pets_envolvidos": [rex_id],
+        "snapshot": {
+            "tutor_nome": "Ana Souza",
+            "prestador_nome": "João Passeios",
+            "pets_nomes": ["Rex"],
+        },
+    },
+    {
+        "evento_id": ObjectId(),
+        "tipo_evento": "Hospedagem",
+        "status": "Concluído",
+        "data_inicio": data("2026-09-20 12:00"),
+        "data_fim": data("2026-09-23 12:00"),
+        "qtde_diarias": 3,            # 3 diárias x R$ 60,00 = R$ 180,00
+        "valor_total": 180.0,
+        "tutor_id": ana_id,
+        "prestador_id": casa_id,
+        "servico_id": casa_diaria,
+        "pets_envolvidos": [mia_id],
+        "snapshot": {
+            "tutor_nome": "Ana Souza",
+            "prestador_nome": "Casa do Pet Feliz",
+            "pets_nomes": ["Mia"],
+        },
+    },
+    {
+        "evento_id": ObjectId(),
+        "tipo_evento": "Passeio",
+        "status": "Solicitado",
+        "data_inicio": data("2026-11-10 17:00"),
+        "data_fim": data("2026-11-10 18:00"),
+        "valor_total": 40.0,
+        "tutor_id": bruno_id,
+        "prestador_id": joao_id,
+        "servico_id": joao_passeio60,
+        "pets_envolvidos": [thor_id],
+        "snapshot": {
+            "tutor_nome": "Bruno Lima",
+            "prestador_nome": "João Passeios",
+            "pets_nomes": ["Thor"],
+        },
     },
 ]
 
 
 def limpar_banco():
-    """Apaga as coleções (inclusive as do modelo antigo), para poder rodar de novo."""
+    """Apaga as coleções (inclusive as de modelagens antigas), para rodar de novo."""
     for nome in COLECOES + COLECOES_ANTIGAS:
         banco.drop_collection(nome)
 
 
 def criar_colecoes():
-    """Cria as coleções com uma validação mínima (campos essenciais)."""
+    """Cria as coleções com uma validação mínima dos campos essenciais."""
     banco.create_collection(
         "tutores",
         validator={
             "$jsonSchema": {
                 "bsonType": "object",
-                "required": ["nome", "email"],
+                "required": ["nome", "telefone"],
                 "properties": {"pets": {"bsonType": "array"}},
             }
         },
@@ -193,8 +244,26 @@ def criar_colecoes():
         validator={
             "$jsonSchema": {
                 "bsonType": "object",
-                "required": ["tipo", "nome"],
-                "properties": {"tipo": {"enum": ["passeador", "hospedagem"]}},
+                "required": ["nome", "tipos_servicos_gerais"],
+                "properties": {"servicos_oferecidos": {"bsonType": "array"}},
+            }
+        },
+    )
+    banco.create_collection(
+        "eventos",
+        validator={
+            "$jsonSchema": {
+                "bsonType": "object",
+                "required": ["tipo_evento", "status", "tutor_id", "prestador_id"],
+                "properties": {
+                    "tipo_evento": {"enum": ["Passeio", "Hospedagem"]},
+                    "status": {
+                        "enum": [
+                            "Solicitado", "Confirmado", "Em Andamento",
+                            "Concluído", "Cancelado",
+                        ]
+                    },
+                },
             }
         },
     )
@@ -203,22 +272,20 @@ def criar_colecoes():
 def inserir_documentos():
     banco["prestadores"].insert_many(prestadores)
     banco["tutores"].insert_many(tutores)
+    banco["eventos"].insert_many(eventos)
 
 
 def mostrar_resumo():
     print(f"Banco '{banco.name}' criado com sucesso:")
-    n_tutores = banco["tutores"].count_documents({})
-    n_prestadores = banco["prestadores"].count_documents({})
-    n_pets = n_visitas = 0
-    for tutor in banco["tutores"].find():
-        pets = tutor.get("pets", [])
-        n_pets += len(pets)
-        for pet in pets:
-            n_visitas += len(pet.get("visitas", []))
-    print(f"  - tutores: {n_tutores}")
-    print(f"  - prestadores: {n_prestadores}")
-    print(f"  - pets (dentro dos tutores): {n_pets}")
-    print(f"  - visitas (dentro dos pets): {n_visitas}")
+    n_pets = sum(len(t.get("pets", [])) for t in banco["tutores"].find())
+    n_servicos = sum(
+        len(p.get("servicos_oferecidos", [])) for p in banco["prestadores"].find()
+    )
+    print(f"  - tutores: {banco['tutores'].count_documents({})}")
+    print(f"      pets embutidos: {n_pets}")
+    print(f"  - prestadores: {banco['prestadores'].count_documents({})}")
+    print(f"      serviços embutidos: {n_servicos}")
+    print(f"  - eventos: {banco['eventos'].count_documents({})}")
 
 
 if __name__ == "__main__":
