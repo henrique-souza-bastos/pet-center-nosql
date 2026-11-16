@@ -35,10 +35,12 @@ Cada evento guarda um *snapshot* com os nomes do tutor, do prestador e dos pets,
 
 O app não deixa qualquer pessoa cadastrar qualquer coisa: cada perfil só enxerga o que lhe cabe.
 
+**Entrada no sistema:** a primeira tela oferece apenas **Entrar** ou **Criar conta**. Cada conta tem um nome de `usuario` único (ex.: `ana.souza`) e o login é feito só com ele, sem senha — é um login simplificado para fins didáticos. Ao criar a conta a pessoa escolhe se é tutor ou prestador, e depois de entrar só vê a área do seu perfil. Usuários de exemplo: `ana.souza`, `bruno.lima`, `carla.mendes` (tutores) e `joao.passeios`, `casa.petfeliz`, `patas.cia` (prestadores).
+
 | Perfil | O que pode fazer |
 |---|---|
-| **Tutor** | Criar seu cadastro, cadastrar **seus** pets, ver a vitrine de serviços, **solicitar** um serviço escolhendo a data (e, na hospedagem, quantas diárias) e acompanhar seus agendamentos |
-| **Prestador** | Criar seu cadastro, montar seu **catálogo de serviços** e **aceitar ou recusar** as solicitações que recebe |
+| **Tutor** | Criar sua conta, cadastrar **seus** pets, ver a vitrine de serviços, **solicitar** um serviço escolhendo a data (e, na hospedagem, quantas diárias) e acompanhar seus agendamentos |
+| **Prestador** | Criar sua conta, montar seu **catálogo de serviços** e **aceitar ou recusar** as solicitações que recebe |
 
 **Fluxo de um agendamento:**
 
@@ -70,12 +72,13 @@ A modelagem segue o princípio do banco de documentos: o que **pertence** a uma 
 
 ### 1. `tutores` (com pets embutidos)
 
-**Tutor:** `nome`, `endereco`, `telefone`, `data_nascimento`
+**Tutor:** `usuario` (nome de login, único), `nome`, `endereco`, `telefone`, `data_nascimento`
 **Cada pet do array `pets`:** `pet_id`, `nome`, `especie`, `raca`, `peso_kg`, `porte`, `data_nascimento` (objeto com `data` e `tipo`: "Exata" ou "Aproximada"), `possui_alergia`, `detalhes_alergia`, `qtde_passeios_dia` (1, 2 ou 3), `observacoes`
 
 ```json
 {
   "_id": "<ObjectId do tutor>",
+  "usuario": "ana.souza",
   "nome": "Ana Souza",
   "endereco": "Rua Goiás, 100 - Santa Mônica, Uberlândia/MG",
   "telefone": "(34) 99999-0001",
@@ -100,7 +103,7 @@ A modelagem segue o princípio do banco de documentos: o que **pertence** a uma 
 
 ### 2. `prestadores` (com catálogo de serviços embutido)
 
-**Prestador:** `nome`, `endereco`, `telefone`, `data_nascimento`, `tipos_servicos_gerais` ("Passeio", "Hospedagem" ou "Ambos")
+**Prestador:** `usuario` (nome de login, único), `nome`, `endereco`, `telefone`, `data_nascimento`, `tipos_servicos_gerais` ("Passeio", "Hospedagem" ou "Ambos")
 **Cada serviço do array `servicos_oferecidos`:** `servico_id`, `tipo`, `especies_aceitas`, `portes_aceitos`, `valor`, `aceita_animais_com_alergia_doenca`, mais `tempo_duracao` (quando é **Passeio**) ou `max_diarias`, de 1 a 10 (quando é **Hospedagem**).
 
 > No **passeio**, `valor` é o preço do passeio. Na **hospedagem**, `valor` é o preço da **diária** e `max_diarias` é quantas diárias o prestador tem disponíveis — o tutor escolhe quantas quer e o total é calculado pelo sistema.
@@ -108,6 +111,7 @@ A modelagem segue o princípio do banco de documentos: o que **pertence** a uma 
 ```json
 {
   "_id": "<ObjectId do prestador>",
+  "usuario": "joao.passeios",
   "nome": "João Passeios",
   "endereco": "Rua das Acácias, 250 - Uberlândia/MG",
   "telefone": "(34) 98888-0001",
@@ -184,7 +188,8 @@ Streamlit (formulário)  →  FastAPI (API)  →  MongoDB Atlas (banco)
 
 | Método | Rota | O que faz |
 |---|---|---|
-| POST | `/tutores` | Cadastra um tutor |
+| GET | `/login/{usuario}` | Localiza a conta pelo usuário e devolve o perfil (Tutor ou Prestador) |
+| POST | `/tutores` | Cadastra um tutor (recusa `usuario` repetido) |
 | POST | `/tutores/{tutor_id}/pets` | Adiciona um pet **dentro** do tutor |
 | POST | `/prestadores` | Cadastra um prestador |
 | POST | `/prestadores/{prestador_id}/servicos` | Adiciona um serviço **dentro** do prestador |
@@ -192,6 +197,8 @@ Streamlit (formulário)  →  FastAPI (API)  →  MongoDB Atlas (banco)
 | POST | `/eventos` | Tutor solicita um serviço (a API calcula o valor e monta o snapshot) |
 | PATCH | `/eventos/{evento_id}/status` | Prestador aceita (Confirmado) ou recusa (Cancelado) |
 | GET | `/tutores` · `/prestadores` · `/eventos` | Lista o que está cadastrado (eventos aceita filtros `tutor_id`, `prestador_id` e `status`) |
+| GET | `/tutores/{tutor_id}/pets/{pet_id}/servicos-compativeis` | **[A2]** Só os serviços que aceitam o pet, dos mais contratados para os menos |
+| GET | `/prestadores/{prestador_id}/faturamento` | **[A2]** Faturamento do prestador por mês e por tipo de serviço |
 
 ---
 
@@ -201,6 +208,7 @@ Streamlit (formulário)  →  FastAPI (API)  →  MongoDB Atlas (banco)
 |---|---|---|
 | A0 | Descrição do sistema | Este README |
 | A1 | Criação do banco, das coleções e de documentos de exemplo no MongoDB Atlas, mais a API e o formulário de cadastro | Pasta [`A1`](A1) |
+| A2 | Duas funcionalidades novas com **pipelines de agregação** bem diferentes: serviços compatíveis com o pet e painel de faturamento | Pasta [`A2`](A2) · [detalhes](#-a2--pipelines-de-agregação) |
 
 ### Como executar a A1
 
@@ -239,3 +247,81 @@ Streamlit (formulário)  →  FastAPI (API)  →  MongoDB Atlas (banco)
 | `A1/app.py` | Formulário web (Streamlit) de cadastro |
 | `A1/requirements.txt` | Bibliotecas Python necessárias |
 | `A1/.env.exemplo` | Modelo do arquivo de configuração da conexão |
+
+---
+
+## 🧮 A2 — Pipelines de agregação
+
+**Enunciado:** implementar 2 funcionalidades úteis para o sistema, com pipelines bem diferentes.
+
+Um **pipeline de agregação** é uma "linha de montagem" dentro do MongoDB: os documentos de uma coleção passam por etapas em sequência (filtrar, abrir arrays, juntar com outra coleção, agrupar, ordenar) e a saída de uma etapa é a entrada da próxima. O trabalho é feito pelo banco, não pelo Python.
+
+Os dois pipelines estão no arquivo [`A2/consultas.py`](A2/consultas.py).
+
+| | Funcionalidade 1 | Funcionalidade 2 |
+|---|---|---|
+| **O que é** | Serviços compatíveis com o meu pet | Painel de faturamento |
+| **Para quem** | Tutor | Prestador |
+| **Coleção de partida** | `prestadores` | `eventos` |
+| **Ideia central** | Abrir um array embutido e **juntar** com outra coleção | **Agrupar** e calcular totais por período |
+| **Etapas** | `$unwind` → `$match` → `$lookup` → `$addFields` → `$sort` → `$project` | `$match` → `$group` → `$sort` → `$project` |
+
+### Funcionalidade 1 — Serviços compatíveis com o meu pet
+
+**Problema que resolve:** na A1 o tutor via a vitrine inteira e só descobria que o pet não era aceito quando a API recusava o pedido. Agora ele escolhe o pet e vê **apenas** os serviços que o aceitam, começando pelos mais contratados.
+
+| Etapa | O que faz |
+|---|---|
+| `$unwind` | "Abre" o array `servicos_oferecidos`: um prestador com 3 serviços vira 3 documentos, um por serviço |
+| `$match` | Mantém só os serviços que aceitam a espécie e o porte do pet e, se o pet tem alergia/doença, só os que aceitam essa condição |
+| `$lookup` | Junta com a coleção `eventos`, trazendo os eventos **concluídos** de cada serviço (o "join" do MongoDB) |
+| `$addFields` | Cria o campo `vezes_contratado` com o tamanho da lista trazida pelo `$lookup` |
+| `$sort` | Mais contratados primeiro; no empate, o mais barato |
+| `$project` | Monta a resposta no mesmo formato da vitrine `/servicos` |
+
+### Funcionalidade 2 — Painel de faturamento
+
+**Problema que resolve:** o prestador só enxergava a lista de eventos, sem nenhum resumo. Agora vê quanto faturou em cada mês, separado por tipo de serviço, com quantidade e ticket médio (valor médio por serviço).
+
+| Etapa | O que faz |
+|---|---|
+| `$match` | Mantém só os eventos do prestador com status **Concluído** (pendente, confirmado e cancelado não são receita) |
+| `$group` | Agrupa por mês (`$dateToString` transforma a data em `"2026-10"`) e por tipo; calcula `$sum` (faturamento e quantidade) e `$avg` (ticket médio) |
+| `$sort` | Ordem cronológica e, dentro do mês, por tipo |
+| `$project` | Organiza os campos da resposta e arredonda o ticket médio |
+
+### O que é novo na A2
+
+A pasta `A2` é uma cópia da `A1` com as novidades. Tudo que foi acrescentado está marcado no código com **`[A2]`** (blocos que começam em `# ===== [A2] ...` e terminam em `# ===== fim [A2] =====`).
+
+| Arquivo | O que mudou |
+|---|---|
+| `A2/consultas.py` | **Arquivo novo.** Os dois pipelines de agregação, comentados etapa por etapa |
+| `A2/main.py` | Bloco `[A2]` no fim, com as duas rotas novas |
+| `A2/app.py` | Abas novas **"Para o meu pet (A2)"** (tutor) e **"Faturamento (A2)"** (prestador) |
+| `A2/criar_banco.py` | Bloco `[A2] DADOS EXTRAS`: mais 1 prestador, 1 tutor e 17 eventos em vários meses, para as agregações terem o que mostrar |
+| `A2/database.py`, `A2/modelos.py`, `A2/requirements.txt`, `A2/.env.exemplo` | Iguais aos da A1 |
+
+### Como executar a A2
+
+Os passos são os mesmos da A1, trocando a pasta:
+
+1. Copie `A2/.env.exemplo` para `A2/.env` e preencha `MONGO_URI` (pode ser a mesma da A1).
+2. Entre na pasta:
+   ```bash
+   cd A2
+   ```
+3. Recrie o banco com os dados extras:
+   ```bash
+   python criar_banco.py
+   ```
+4. Suba a API (deixe este terminal aberto):
+   ```bash
+   python -m uvicorn main:app --reload
+   ```
+5. Em outro terminal, abra a tela:
+   ```bash
+   python -m streamlit run app.py
+   ```
+
+**Onde ver na tela:** entre com um usuário de tutor (ex.: `ana.souza`) → aba *Para o meu pet (A2)*; entre com um usuário de prestador (ex.: `patas.cia`) → aba *Faturamento (A2)*. As rotas também podem ser testadas em `http://localhost:8000/docs`.
