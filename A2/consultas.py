@@ -1,12 +1,6 @@
-"""
-[A2] Pipelines de agregação do Pet Center.
-
-Autores: Henrique Souza e Yuri Cainã
-"""
 from database import banco
 
 
-# ===== [A2] Serviços compatíveis com o pet =====
 def servicos_compativeis(pet):
     condicoes = [
         {"$or": [
@@ -52,7 +46,6 @@ def servicos_compativeis(pet):
     return list(banco["prestadores"].aggregate(pipeline))
 
 
-# ===== [A2] Faturamento do prestador =====
 def faturamento_prestador(prestador_id):
     pipeline = [
         {"$match": {"prestador_id": prestador_id, "status": "Concluído"}},

@@ -1,12 +1,3 @@
-"""
-API do Pet Center (FastAPI).
-
-[A2] Rotas novas no fim do arquivo: servicos-compativeis e faturamento.
-
-Autores: Henrique Souza e Yuri Cainã
-
-Como rodar: uvicorn main:app --reload  (docs em http://localhost:8000/docs)
-"""
 import re
 from datetime import timedelta
 from typing import Optional
@@ -14,7 +5,7 @@ from typing import Optional
 from bson import ObjectId
 from fastapi import FastAPI, HTTPException
 
-import consultas  # [A2]
+import consultas
 from database import banco
 from modelos import (
     STATUS_EVENTO,
@@ -46,7 +37,6 @@ def _limpar(documento):
     return documento
 
 
-# ===== LOGIN =====
 def _normalizar_usuario(texto):
     usuario = (texto or "").strip().lower()
     if not re.fullmatch(r"[a-z0-9._-]{3,30}", usuario):
@@ -80,7 +70,6 @@ def entrar(usuario: str):
     )
 
 
-# ===== TUTORES =====
 @app.post("/tutores")
 def criar_tutor(tutor: Tutor):
     documento = tutor.model_dump()
@@ -113,7 +102,6 @@ def adicionar_pet(tutor_id: str, pet: Pet):
     return {"mensagem": "Pet adicionado ao tutor!", "pet_id": str(documento["pet_id"])}
 
 
-# ===== PRESTADORES =====
 @app.post("/prestadores")
 def criar_prestador(prestador: Prestador):
     documento = prestador.model_dump()
@@ -168,7 +156,6 @@ def listar_servicos():
     return catalogo
 
 
-# ===== EVENTOS =====
 def _conferir_compatibilidade(pet, servico):
     nome = pet.get("nome", "pet")
     especies = servico.get("especies_aceitas") or []
@@ -288,7 +275,6 @@ def atualizar_status(evento_id: str, atualizacao: AtualizacaoStatus):
     return {"mensagem": f"Evento agora está como '{atualizacao.status}'."}
 
 
-# ===== [A2] ROTAS NOVAS =====
 @app.get("/tutores/{tutor_id}/pets/{pet_id}/servicos-compativeis")
 def listar_servicos_compativeis(tutor_id: str, pet_id: str):
     tutor = banco["tutores"].find_one({"_id": _id_valido(tutor_id)})
@@ -313,4 +299,3 @@ def consultar_faturamento(prestador_id: str):
     if not banco["prestadores"].find_one({"_id": id_prestador}, {"_id": 1}):
         raise HTTPException(status_code=404, detail="Prestador não encontrado")
     return consultas.faturamento_prestador(id_prestador)
-# ===== fim [A2] =====

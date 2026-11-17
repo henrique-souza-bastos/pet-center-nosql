@@ -292,14 +292,14 @@ Os dois pipelines estão no arquivo [`A2/consultas.py`](A2/consultas.py).
 
 ### O que é novo na A2
 
-A pasta `A2` é uma cópia da `A1` com as novidades. Tudo que foi acrescentado está marcado no código com **`[A2]`** (blocos que começam em `# ===== [A2] ...` e terminam em `# ===== fim [A2] =====`).
+A pasta `A2` é uma cópia da `A1` com as novidades listadas abaixo.
 
 | Arquivo | O que mudou |
 |---|---|
 | `A2/consultas.py` | **Arquivo novo.** Os dois pipelines de agregação, comentados etapa por etapa |
-| `A2/main.py` | Bloco `[A2]` no fim, com as duas rotas novas |
-| `A2/app.py` | Abas novas **"Para o meu pet (A2)"** (tutor) e **"Faturamento (A2)"** (prestador) |
-| `A2/criar_banco.py` | Bloco `[A2] DADOS EXTRAS`: mais 1 prestador, 1 tutor e 17 eventos em vários meses, para as agregações terem o que mostrar |
+| `A2/main.py` | As duas rotas novas, no fim do arquivo |
+| `A2/app.py` | Abas novas **"Para o meu pet"** (tutor) e **"Faturamento"** (prestador) |
+| `A2/criar_banco.py` | Dados extras: mais 1 prestador, 1 tutor e 17 eventos em vários meses, para as agregações terem o que mostrar |
 | `A2/database.py`, `A2/modelos.py`, `A2/requirements.txt`, `A2/.env.exemplo` | Iguais aos da A1 |
 
 ### Como executar a A2
@@ -324,4 +324,4 @@ Os passos são os mesmos da A1, trocando a pasta:
    python -m streamlit run app.py
    ```
 
-**Onde ver na tela:** entre com um usuário de tutor (ex.: `ana.souza`) → aba *Para o meu pet (A2)*; entre com um usuário de prestador (ex.: `patas.cia`) → aba *Faturamento (A2)*. As rotas também podem ser testadas em `http://localhost:8000/docs`.
+**Onde ver na tela:** entre com um usuário de tutor (ex.: `ana.souza`) → aba *Para o meu pet*; entre com um usuário de prestador (ex.: `patas.cia`) → aba *Faturamento*. As rotas também podem ser testadas em `http://localhost:8000/docs`.

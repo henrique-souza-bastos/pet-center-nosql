@@ -1,12 +1,3 @@
-"""
-Tela do Pet Center (Streamlit).
-
-[A2] Abas novas: "Para o meu pet (A2)" e "Faturamento (A2)".
-
-Autores: Henrique Souza e Yuri Cainã
-
-Como rodar (com a API no ar): streamlit run app.py
-"""
 from datetime import date, datetime, time, timedelta
 from urllib.parse import quote
 
@@ -27,7 +18,6 @@ st.set_page_config(page_title="Pet Center", page_icon="🐾", layout="centered")
 st.title("🐾 Pet Center")
 
 
-# ===== API =====
 def buscar(caminho):
     try:
         resposta = requests.get(f"{API_URL}{caminho}", timeout=10)
@@ -63,7 +53,6 @@ def mudar_status(evento_id, status):
     return False
 
 
-# ===== FORMATAÇÃO =====
 def br(valor, com_hora=False):
     if not valor:
         return "—"
@@ -90,7 +79,6 @@ def rotulo_servico(s):
     )
 
 
-# ===== LOGIN E CADASTRO =====
 st.session_state.setdefault("usuario", None)
 st.session_state.setdefault("tela", "inicio")
 
@@ -206,13 +194,12 @@ st.sidebar.markdown(f"**{eu['nome']}**")
 st.sidebar.caption(f"@{eu.get('usuario', '')} · {perfil}")
 
 
-# ===== TUTOR =====
 if perfil == "Tutor":
     st.caption(f"Conectado como tutor: **{eu['nome']}**")
     meus_pets = eu.get("pets", [])
     aba_pets, aba_servicos, aba_agenda, aba_para_pet = st.tabs(
         ["🐾 Meus pets", "🔎 Serviços disponíveis", "📅 Meus agendamentos",
-         "✨ Para o meu pet (A2)"]
+         "✨ Para o meu pet"]
     )
 
     with aba_pets:
@@ -358,7 +345,6 @@ if perfil == "Tutor":
                 use_container_width=True, hide_index=True,
             )
 
-    # ===== [A2] SERVIÇOS PARA O MEU PET =====
     with aba_para_pet:
         if not meus_pets:
             st.info("Cadastre um pet para ver os serviços compatíveis com ele.")
@@ -397,16 +383,14 @@ if perfil == "Tutor":
                     ],
                     use_container_width=True, hide_index=True,
                 )
-    # ===== fim [A2] =====
 
 
-# ===== PRESTADOR =====
 else:
     st.caption(f"Conectado como prestador: **{eu['nome']}**")
     meus_servicos = eu.get("servicos_oferecidos", [])
     aba_servicos, aba_pedidos, aba_agenda, aba_faturamento = st.tabs(
         ["🧾 Meus serviços", "📬 Solicitações", "📅 Minha agenda",
-         "💰 Faturamento (A2)"]
+         "💰 Faturamento"]
     )
 
     with aba_servicos:
@@ -517,7 +501,6 @@ else:
                 use_container_width=True, hide_index=True,
             )
 
-    # ===== [A2] FATURAMENTO =====
     with aba_faturamento:
         st.caption("Considera apenas os serviços concluídos.")
         resumo = buscar(f"/prestadores/{eu['_id']}/faturamento")
@@ -556,4 +539,3 @@ else:
                 ],
                 x="Mês", y="Faturamento (R$)", color="Tipo",
             )
-    # ===== fim [A2] =====

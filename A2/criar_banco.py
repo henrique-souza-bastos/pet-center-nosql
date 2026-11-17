@@ -1,12 +1,3 @@
-"""
-Cria o banco patinhas_carinho, as coleções e os documentos de exemplo (fictícios).
-
-[A2] Dados extras no bloco marcado, para as agregações.
-
-Autores: Henrique Souza e Yuri Cainã
-
-Como rodar: python criar_banco.py
-"""
 from datetime import datetime, timedelta, timezone
 
 from bson import ObjectId
@@ -28,7 +19,6 @@ ana_id, rex_id, mia_id = ObjectId(), ObjectId(), ObjectId()
 bruno_id, thor_id = ObjectId(), ObjectId()
 
 
-# ===== PRESTADORES =====
 prestadores = [
     {
         "_id": joao_id,
@@ -82,7 +72,6 @@ prestadores = [
 ]
 
 
-# ===== TUTORES =====
 tutores = [
     {
         "_id": ana_id,
@@ -146,7 +135,6 @@ tutores = [
 ]
 
 
-# ===== EVENTOS =====
 eventos = [
     {
         "evento_id": ObjectId(),
@@ -203,7 +191,6 @@ eventos = [
 ]
 
 
-# ===== [A2] DADOS EXTRAS =====
 patas_id, patas_passeio45, patas_diaria = ObjectId(), ObjectId(), ObjectId()
 carla_id, luna_id, bolt_id = ObjectId(), ObjectId(), ObjectId()
 
@@ -326,7 +313,6 @@ eventos += [
     evento_extra("Cancelado", "2026-11-05 10:00", carla_id, patas_id, patas_passeio45, bolt_id, 30.0, minutos=45),
     evento_extra("Solicitado", "2026-11-28 18:00", bruno_id, patas_id, patas_passeio45, thor_id, 30.0, minutos=45),
 ]
-# ===== fim [A2] =====
 
 
 def limpar_banco():

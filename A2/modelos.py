@@ -1,8 +1,3 @@
-"""
-Modelos Pydantic do Pet Center.
-
-Autores: Henrique Souza e Yuri Cainã
-"""
 from datetime import datetime
 from typing import List, Optional
 
@@ -14,7 +9,6 @@ STATUS_EVENTO = [
 ]
 
 
-# ===== TUTORES =====
 class DataNascimento(BaseModel):
     data: str
     tipo: str
@@ -44,7 +38,6 @@ class Tutor(BaseModel):
     pets: List[Pet] = []
 
 
-# ===== PRESTADORES =====
 class ServicoOferecido(BaseModel):
     tipo: str
     tempo_duracao: Optional[str] = None
@@ -65,7 +58,6 @@ class Prestador(BaseModel):
     servicos_oferecidos: List[ServicoOferecido] = []
 
 
-# ===== EVENTOS =====
 class EventoSolicitacao(BaseModel):
     tutor_id: str
     prestador_id: str

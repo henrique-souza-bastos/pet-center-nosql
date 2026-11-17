@@ -1,8 +1,3 @@
-"""
-Conexão com o MongoDB Atlas (MONGO_URI no arquivo .env).
-
-Autores: Henrique Souza e Yuri Cainã
-"""
 import os
 
 from dotenv import load_dotenv
