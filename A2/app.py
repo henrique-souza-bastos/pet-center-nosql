@@ -1,31 +1,11 @@
 """
-Formulário web (Streamlit) do Pet Center.
+Tela do Pet Center (Streamlit).
 
-A primeira tela só oferece ENTRAR ou CRIAR CONTA. O login é feito pelo nome
-de usuário (sem senha) e é a conta que define o perfil: depois de entrar, a
-pessoa só enxerga a área do perfil dela.
-
-- TUTOR: cadastra os próprios pets, vê a vitrine de
-  serviços, solicita um serviço escolhendo a data (sem poder mexer no valor,
-  que o sistema calcula) e acompanha seus agendamentos.
-- PRESTADOR: monta o catálogo de serviços, recebe as
-  solicitações e ACEITA ou RECUSA cada uma.
-
-Datas aparecem sempre no formato brasileiro (DD/MM/AAAA). No banco elas são
-guardadas no padrão internacional (AAAA-MM-DD), que é o correto para ordenar
-e comparar.
-
-[A2] Novidades da A2 (o resto do arquivo é igual ao da A1), sempre dentro de
-blocos marcados com "[A2]":
-- TUTOR: aba "Para o meu pet (A2)" - mostra só os serviços compatíveis com o
-  pet escolhido, dos mais contratados para os menos contratados.
-- PRESTADOR: aba "Faturamento (A2)" - quanto faturou por mês e por tipo.
-As duas abas só exibem o resultado; a consulta é feita no banco pelos
-pipelines de agregação de consultas.py.
+[A2] Abas novas: "Para o meu pet (A2)" e "Faturamento (A2)".
 
 Autores: Henrique Souza e Yuri Cainã
 
-Como rodar (a API precisa estar rodando antes):  streamlit run app.py
+Como rodar (com a API no ar): streamlit run app.py
 """
 from datetime import date, datetime, time, timedelta
 from urllib.parse import quote
@@ -34,7 +14,7 @@ import requests
 import streamlit as st
 
 API_URL = "http://localhost:8000"
-FORMATO = "DD/MM/YYYY"          # formato mostrado nos seletores de data
+FORMATO = "DD/MM/YYYY"
 
 ESPECIES = ["Cachorro", "Gato", "Outro"]
 PORTES = ["Pequeno", "Médio", "Grande"]
@@ -47,9 +27,7 @@ st.set_page_config(page_title="Pet Center", page_icon="🐾", layout="centered")
 st.title("🐾 Pet Center")
 
 
-# ---------------------------------------------------------------------
-# Conversa com a API
-# ---------------------------------------------------------------------
+# ===== API =====
 def buscar(caminho):
     try:
         resposta = requests.get(f"{API_URL}{caminho}", timeout=10)
@@ -85,11 +63,8 @@ def mudar_status(evento_id, status):
     return False
 
 
-# ---------------------------------------------------------------------
-# Datas no formato brasileiro
-# ---------------------------------------------------------------------
+# ===== FORMATAÇÃO =====
 def br(valor, com_hora=False):
-    """Mostra uma data vinda do banco no formato DD/MM/AAAA."""
     if not valor:
         return "—"
     texto = str(valor)
@@ -115,13 +90,9 @@ def rotulo_servico(s):
     )
 
 
-# =====================================================================
-# ENTRADA NO SISTEMA (login por usuário, sem senha, e criação de conta)
-# O Streamlit roda o arquivo inteiro a cada clique; o st.session_state é a
-# "memória" que guarda quem está conectado entre um clique e outro.
-# =====================================================================
-st.session_state.setdefault("usuario", None)   # quem está conectado
-st.session_state.setdefault("tela", "inicio")  # inicio | login | cadastro
+# ===== LOGIN E CADASTRO =====
+st.session_state.setdefault("usuario", None)
+st.session_state.setdefault("tela", "inicio")
 
 
 def ir_para(tela):
@@ -130,7 +101,6 @@ def ir_para(tela):
 
 
 def carregar_conta(usuario, avisar=True):
-    """Pergunta à API de quem é esse usuário. Devolve None se não achar."""
     try:
         resposta = requests.get(f"{API_URL}/login/{quote(usuario, safe='')}", timeout=10)
         if resposta.status_code == 200:
@@ -145,7 +115,6 @@ def carregar_conta(usuario, avisar=True):
 if not st.session_state["usuario"]:
     tela = st.session_state["tela"]
 
-    # ---------------- primeira tela: só duas opções ----------------
     if tela == "inicio":
         st.subheader("Boas-vindas!")
         st.write("Passeios e hospedagem para o seu pet, com quem entende do assunto.")
@@ -155,7 +124,6 @@ if not st.session_state["usuario"]:
             if st.button("Criar conta", use_container_width=True):
                 ir_para("cadastro")
 
-    # ---------------- entrar ----------------
     elif tela == "login":
         st.subheader("Entrar")
         with st.form("form_login"):
@@ -174,10 +142,8 @@ if not st.session_state["usuario"]:
         if st.button("← Voltar"):
             ir_para("inicio")
 
-    # ---------------- criar conta ----------------
     else:
         st.subheader("Criar conta")
-        # Fica fora do formulário para a tela se ajustar na hora ao tipo escolhido.
         tipo_conta = st.radio(
             "Quero me cadastrar como", ["Tutor", "Prestador"], horizontal=True,
             captions=["Tenho pet e procuro serviços", "Ofereço passeio ou hospedagem"],
@@ -215,7 +181,6 @@ if not st.session_state["usuario"]:
                 if tipo_conta == "Prestador":
                     corpo["tipos_servicos_gerais"] = tipos
                 rota = "/tutores" if tipo_conta == "Tutor" else "/prestadores"
-                # Conta criada: já entra direto, como nos sites de verdade.
                 if enviar(rota, corpo, "Conta criada!"):
                     st.session_state["usuario"] = usuario
                     ir_para("inicio")
@@ -225,13 +190,10 @@ if not st.session_state["usuario"]:
         if st.button("← Voltar"):
             ir_para("inicio")
 
-    st.stop()   # sem login, nada abaixo desta linha é mostrado
+    st.stop()
 
 
-# ---------------- a partir daqui: usuário conectado ----------------
-# A conta é buscada de novo a cada clique para a tela refletir o que mudou
-# (um pet ou serviço recém-cadastrado, por exemplo).
-conta = carregar_conta(st.session_state["usuario"], avisar=False)
+conta =carregar_conta(st.session_state["usuario"], avisar=False)
 if st.sidebar.button("Sair", use_container_width=True):
     st.session_state["usuario"] = None
     ir_para("inicio")
@@ -239,26 +201,20 @@ if not conta:
     st.warning("Não foi possível carregar a sua conta. Tente de novo ou saia e entre outra vez.")
     st.stop()
 
-# O perfil vem do banco, não de uma escolha na tela: quem entra como tutor só
-# enxerga a área de tutor, e quem entra como prestador só a de prestador.
 perfil, eu = conta["perfil"], conta["dados"]
 st.sidebar.markdown(f"**{eu['nome']}**")
 st.sidebar.caption(f"@{eu.get('usuario', '')} · {perfil}")
 
 
-# =====================================================================
-# PERFIL TUTOR
-# =====================================================================
+# ===== TUTOR =====
 if perfil == "Tutor":
     st.caption(f"Conectado como tutor: **{eu['nome']}**")
     meus_pets = eu.get("pets", [])
-    # [A2] a quarta aba (aba_para_pet) é nova
     aba_pets, aba_servicos, aba_agenda, aba_para_pet = st.tabs(
         ["🐾 Meus pets", "🔎 Serviços disponíveis", "📅 Meus agendamentos",
          "✨ Para o meu pet (A2)"]
     )
 
-    # --- meus pets ---
     with aba_pets:
         if meus_pets:
             st.table([
@@ -306,7 +262,6 @@ if perfil == "Tutor":
                     }, "Pet cadastrado!"):
                         st.rerun()
 
-    # --- vitrine de serviços + solicitação ---
     with aba_servicos:
         catalogo = buscar("/servicos")
         if not catalogo:
@@ -363,8 +318,7 @@ if perfil == "Tutor":
                     diarias = None
                     total = float(servico.get("valor", 0))
 
-                st.metric("Valor total (calculado pelo sistema)", f"R$ {total:.2f}")
-                st.caption("O valor é definido pelo serviço: você não precisa preenchê-lo.")
+                st.metric("Valor total", f"R$ {total:.2f}")
 
                 if st.button("Solicitar serviço", type="primary"):
                     if not pets_escolhidos:
@@ -382,7 +336,6 @@ if perfil == "Tutor":
                         enviar("/eventos", corpo,
                                "Solicitação enviada! Aguarde o prestador aceitar.")
 
-    # --- meus agendamentos ---
     with aba_agenda:
         meus_eventos = buscar(f"/eventos?tutor_id={eu['_id']}")
         if not meus_eventos:
@@ -405,17 +358,8 @@ if perfil == "Tutor":
                 use_container_width=True, hide_index=True,
             )
 
-    # =============================================================
-    # [A2] ABA NOVA - serviços compatíveis com o pet escolhido
-    # Pipeline: $unwind -> $match -> $lookup -> $addFields -> $sort
-    # (função servicos_compativeis, em consultas.py)
-    # =============================================================
+    # ===== [A2] SERVIÇOS PARA O MEU PET =====
     with aba_para_pet:
-        st.caption(
-            "Escolha um pet: o sistema mostra só os serviços que aceitam a "
-            "espécie, o porte e a condição de saúde dele, começando pelos "
-            "mais contratados."
-        )
         if not meus_pets:
             st.info("Cadastre um pet para ver os serviços compatíveis com ele.")
         else:
@@ -453,26 +397,18 @@ if perfil == "Tutor":
                     ],
                     use_container_width=True, hide_index=True,
                 )
-                st.caption(
-                    "Para contratar, use a aba “Serviços disponíveis”. "
-                    "“Vezes contratado” conta os serviços já concluídos."
-                )
     # ===== fim [A2] =====
 
 
-# =====================================================================
-# PERFIL PRESTADOR
-# =====================================================================
+# ===== PRESTADOR =====
 else:
     st.caption(f"Conectado como prestador: **{eu['nome']}**")
     meus_servicos = eu.get("servicos_oferecidos", [])
-    # [A2] a quarta aba (aba_faturamento) é nova
     aba_servicos, aba_pedidos, aba_agenda, aba_faturamento = st.tabs(
         ["🧾 Meus serviços", "📬 Solicitações", "📅 Minha agenda",
          "💰 Faturamento (A2)"]
     )
 
-    # --- catálogo do prestador ---
     with aba_servicos:
         if meus_servicos:
             st.table([
@@ -526,7 +462,6 @@ else:
                 if enviar(f"/prestadores/{eu['_id']}/servicos", corpo, "Serviço cadastrado!"):
                     st.rerun()
 
-    # --- solicitações para aceitar ou recusar ---
     with aba_pedidos:
         pedidos = buscar(f"/eventos?prestador_id={eu['_id']}&status=Solicitado")
         if not pedidos:
@@ -557,7 +492,6 @@ else:
                         if mudar_status(pedido["_id"], "Cancelado"):
                             st.rerun()
 
-    # --- agenda do prestador ---
     with aba_agenda:
         agenda = [
             e for e in buscar(f"/eventos?prestador_id={eu['_id']}")
@@ -583,16 +517,9 @@ else:
                 use_container_width=True, hide_index=True,
             )
 
-    # =============================================================
-    # [A2] ABA NOVA - painel de faturamento do prestador
-    # Pipeline: $match -> $group -> $sort -> $project
-    # (função faturamento_prestador, em consultas.py)
-    # =============================================================
+    # ===== [A2] FATURAMENTO =====
     with aba_faturamento:
-        st.caption(
-            "Considera apenas os serviços com situação “Concluído”: pedidos "
-            "pendentes, confirmados ou cancelados não entram na conta."
-        )
+        st.caption("Considera apenas os serviços concluídos.")
         resumo = buscar(f"/prestadores/{eu['_id']}/faturamento")
         if not resumo:
             st.info("Você ainda não tem serviços concluídos.")
@@ -607,7 +534,6 @@ else:
             st.dataframe(
                 [
                     {
-                        # o banco devolve "2026-10"; na tela vira "10/2026"
                         "Mês": f"{linha['mes'][5:]}/{linha['mes'][:4]}",
                         "Tipo": linha.get("tipo", ""),
                         "Serviços": linha.get("quantidade", 0),
@@ -619,8 +545,6 @@ else:
                 use_container_width=True, hide_index=True,
             )
 
-            # No gráfico o mês fica como "2026-10" de propósito: nesse
-            # formato a ordem alfabética é também a ordem cronológica.
             st.bar_chart(
                 [
                     {

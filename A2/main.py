@@ -1,33 +1,11 @@
 """
-API (FastAPI) do Pet Center.
+API do Pet Center (FastAPI).
 
-Login: /login/{usuario} localiza a conta pelo nome de usuário (sem senha) e
-devolve o perfil (Tutor ou Prestador). O usuário é único no sistema inteiro.
-
-Rotas organizadas pelas 3 coleções da modelagem:
-- /tutores      -> tutor com os pets embutidos
-- /prestadores  -> prestador com o catálogo de serviços embutido
-- /servicos     -> catálogo de todos os prestadores (vitrine para o tutor)
-- /eventos      -> agendamentos (coleção separada, com referências + snapshot)
-
-Regras de negócio que a API garante (o formulário não consegue burlar):
-- O tutor NÃO envia valor: a API calcula a partir do serviço escolhido
-  (passeio = valor do serviço; hospedagem = valor da diária x quantidade).
-- Todo evento nasce com status "Solicitado"; só o prestador muda o status,
-  aceitando (Confirmado) ou recusando (Cancelado).
-- O pet precisa ser compatível com as restrições do serviço (espécie, porte e
-  se o serviço aceita animal com alergia/doença).
-
-[A2] Novidades da A2 (o resto do arquivo é igual ao da A1):
-- GET /tutores/{tutor_id}/pets/{pet_id}/servicos-compativeis
-- GET /prestadores/{prestador_id}/faturamento
-As duas rotas ficam no bloco "[A2]" no fim deste arquivo e usam os pipelines
-de agregação escritos em consultas.py.
+[A2] Rotas novas no fim do arquivo: servicos-compativeis e faturamento.
 
 Autores: Henrique Souza e Yuri Cainã
 
-Como rodar:  uvicorn main:app --reload
-Documentação automática (teste pelo navegador):  http://localhost:8000/docs
+Como rodar: uvicorn main:app --reload  (docs em http://localhost:8000/docs)
 """
 import re
 from datetime import timedelta
@@ -36,7 +14,7 @@ from typing import Optional
 from bson import ObjectId
 from fastapi import FastAPI, HTTPException
 
-import consultas  # [A2] pipelines de agregação
+import consultas  # [A2]
 from database import banco
 from modelos import (
     STATUS_EVENTO,
@@ -52,7 +30,6 @@ app = FastAPI(title="Pet Center")
 
 
 def _id_valido(valor):
-    """Converte texto em ObjectId; devolve erro 400 se o id for inválido."""
     try:
         return ObjectId(valor)
     except Exception:
@@ -60,7 +37,6 @@ def _id_valido(valor):
 
 
 def _limpar(documento):
-    """Converte ObjectId em texto (recursivo) para poder devolver em JSON."""
     if isinstance(documento, list):
         return [_limpar(item) for item in documento]
     if isinstance(documento, dict):
@@ -70,11 +46,8 @@ def _limpar(documento):
     return documento
 
 
-# =====================================================================
-# LOGIN (por nome de usuário, sem senha)
-# =====================================================================
+# ===== LOGIN =====
 def _normalizar_usuario(texto):
-    """Padroniza o usuário (minúsculas, sem espaços nas pontas) e confere o formato."""
     usuario = (texto or "").strip().lower()
     if not re.fullmatch(r"[a-z0-9._-]{3,30}", usuario):
         raise HTTPException(
@@ -86,10 +59,6 @@ def _normalizar_usuario(texto):
 
 
 def _conferir_usuario_livre(usuario):
-    """
-    O usuário precisa ser único no sistema INTEIRO. Como tutores e prestadores
-    ficam em coleções diferentes, a API confere nas duas antes de gravar.
-    """
     for colecao in ("tutores", "prestadores"):
         if banco[colecao].find_one({"usuario": usuario}, {"_id": 1}):
             raise HTTPException(
@@ -100,10 +69,6 @@ def _conferir_usuario_livre(usuario):
 
 @app.get("/login/{usuario}")
 def entrar(usuario: str):
-    """
-    Localiza a conta pelo usuário e diz qual é o perfil dela. É por aqui que a
-    tela sabe se deve mostrar a área do tutor ou a do prestador.
-    """
     usuario = usuario.strip().lower()
     for colecao, perfil in (("tutores", "Tutor"), ("prestadores", "Prestador")):
         conta = banco[colecao].find_one({"usuario": usuario})
@@ -115,9 +80,7 @@ def entrar(usuario: str):
     )
 
 
-# =====================================================================
-# TUTORES (com pets embutidos)
-# =====================================================================
+# ===== TUTORES =====
 @app.post("/tutores")
 def criar_tutor(tutor: Tutor):
     documento = tutor.model_dump()
@@ -150,9 +113,7 @@ def adicionar_pet(tutor_id: str, pet: Pet):
     return {"mensagem": "Pet adicionado ao tutor!", "pet_id": str(documento["pet_id"])}
 
 
-# =====================================================================
-# PRESTADORES (com catálogo de serviços embutido)
-# =====================================================================
+# ===== PRESTADORES =====
 @app.post("/prestadores")
 def criar_prestador(prestador: Prestador):
     documento = prestador.model_dump()
@@ -197,7 +158,6 @@ def adicionar_servico(prestador_id: str, servico: ServicoOferecido):
 
 @app.get("/servicos")
 def listar_servicos():
-    """Vitrine: todos os serviços de todos os prestadores, numa lista só."""
     catalogo = []
     for prestador in banco["prestadores"].find():
         for servico in prestador.get("servicos_oferecidos", []):
@@ -208,11 +168,8 @@ def listar_servicos():
     return catalogo
 
 
-# =====================================================================
-# EVENTOS
-# =====================================================================
+# ===== EVENTOS =====
 def _conferir_compatibilidade(pet, servico):
-    """O pet pode usar esse serviço? Se não, explica o motivo."""
     nome = pet.get("nome", "pet")
     especies = servico.get("especies_aceitas") or []
     portes = servico.get("portes_aceitos") or []
@@ -255,7 +212,6 @@ def solicitar_evento(pedido: EventoSolicitacao):
         if problema:
             raise HTTPException(status_code=400, detail=problema)
 
-    # ---- a API é quem calcula prazo e valor (o tutor não informa) ----
     if servico.get("tipo") == "Hospedagem":
         diarias = pedido.qtde_diarias or 1
         disponiveis = servico.get("max_diarias") or 10
@@ -274,7 +230,7 @@ def solicitar_evento(pedido: EventoSolicitacao):
     documento = {
         "evento_id": ObjectId(),
         "tipo_evento": servico.get("tipo"),
-        "status": "Solicitado",          # sempre nasce assim
+        "status": "Solicitado",
         "data_inicio": pedido.data_inicio,
         "data_fim": data_fim,
         "qtde_diarias": diarias,
@@ -318,7 +274,6 @@ def listar_eventos(
 
 @app.patch("/eventos/{evento_id}/status")
 def atualizar_status(evento_id: str, atualizacao: AtualizacaoStatus):
-    """Usado pelo prestador para aceitar (Confirmado) ou recusar (Cancelado)."""
     if atualizacao.status not in STATUS_EVENTO:
         raise HTTPException(
             status_code=400,
@@ -333,14 +288,9 @@ def atualizar_status(evento_id: str, atualizacao: AtualizacaoStatus):
     return {"mensagem": f"Evento agora está como '{atualizacao.status}'."}
 
 
-# =====================================================================
-# [A2] ROTAS NOVAS - funcionalidades com pipeline de agregação
-# A rota só confere se os ids existem; quem faz o trabalho pesado é o
-# MongoDB, pelos pipelines que estão em consultas.py.
-# =====================================================================
+# ===== [A2] ROTAS NOVAS =====
 @app.get("/tutores/{tutor_id}/pets/{pet_id}/servicos-compativeis")
 def listar_servicos_compativeis(tutor_id: str, pet_id: str):
-    """[A2] Vitrine filtrada: só os serviços que aceitam esse pet."""
     tutor = banco["tutores"].find_one({"_id": _id_valido(tutor_id)})
     if not tutor:
         raise HTTPException(status_code=404, detail="Tutor não encontrado")
@@ -359,7 +309,6 @@ def listar_servicos_compativeis(tutor_id: str, pet_id: str):
 
 @app.get("/prestadores/{prestador_id}/faturamento")
 def consultar_faturamento(prestador_id: str):
-    """[A2] Faturamento do prestador por mês e por tipo de serviço."""
     id_prestador = _id_valido(prestador_id)
     if not banco["prestadores"].find_one({"_id": id_prestador}, {"_id": 1}):
         raise HTTPException(status_code=404, detail="Prestador não encontrado")
